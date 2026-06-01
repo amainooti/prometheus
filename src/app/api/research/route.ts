@@ -11,7 +11,12 @@ export async function POST(req: NextRequest) {
 
     // ── DISCOVERY MODE — find strangers matching criteria ──────────────────
     if (mode === 'discover') {
-      const { niche, role, ecosystem, beliefSignal, platform } = criteria ?? {}
+      const { niches, roles, ecosystems, platforms, beliefSignal } = criteria ?? {}
+
+      const niche     = niches?.join(', ')
+      const role      = roles?.join(', ')
+      const ecosystem = ecosystems?.join(', ')
+      const platform  = platforms?.join(', ')
 
       const systemPrompt = `You are a crypto-native lead prospecting agent with access to web search. Your job is to find REAL, specific individuals who match a given profile — people the user has never heard of and could not find themselves without hours of manual research.
 

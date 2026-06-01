@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Search, Loader2, UserPlus, CheckCircle, AlertTriangle,
   Mail, ExternalLink, RefreshCw, Zap, User, Globe,
-  Twitter, ChevronDown, ChevronUp, MailSearch,
-  Download, SaveAll,
+  ChevronDown, ChevronUp, MailSearch, Download, SaveAll,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PRIORITY_LABELS, ACTIVITY_LABELS } from '@/types'
@@ -14,35 +13,36 @@ import { PRIORITY_LABELS, ACTIVITY_LABELS } from '@/types'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Prospect {
-  name:           string
-  role:           string | null
-  company:        string | null
-  companyWebsite: string | null
-  linkedinUrl:    string | null
-  twitterUrl:     string | null
-  farcasterUrl:   string | null
-  email:          string | null
-  emailSource:    string | null
-  cryptoNiche:    string | null
-  beliefSignal:   string | null
-  activityLevel:  string
-  tags:           string[]
-  priority:       string
-  priorityReason: string
-  sourceFound:    string | null
-  confidence:     'HIGH' | 'MEDIUM' | 'LOW'
-  // lookup-only
+  name:            string
+  role:            string | null
+  company:         string | null
+  companyWebsite:  string | null
+  linkedinUrl:     string | null
+  twitterUrl:      string | null
+  farcasterUrl:    string | null
+  email:           string | null
+  emailSource:     string | null
+  cryptoNiche:     string | null
+  beliefSignal:    string | null
+  activityLevel:   string
+  tags:            string[]
+  priority:        string
+  priorityReason:  string
+  sourceFound:     string | null
+  confidence:      'HIGH' | 'MEDIUM' | 'LOW'
   notes?:          string | null
   confidenceReason?: string
 }
 
 interface DiscoveryCriteria {
-  niche:        string
-  role:         string
-  ecosystem:    string
+  niches:       string[]
+  roles:        string[]
+  ecosystems:   string[]
+  platforms:    string[]
   beliefSignal: string
-  platform:     string
 }
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const PRIORITY_BADGE: Record<string, string> = {
   A_PLUS: 'badge-a-plus', A: 'badge-a', B: 'badge-b', C: 'badge-c', D: 'badge-d',
@@ -53,25 +53,61 @@ const CONFIDENCE_COLOR = {
   LOW:    'text-red-400',
 }
 
-const NICHES      = ['DeFi', 'Bitcoin', 'RWA', 'DePIN', 'NFT', 'DAO', 'GameFi', 'SocialFi', 'AI x Crypto', 'Stablecoins', 'Payments', 'ZK / Privacy', 'Modular Blockchain']
-const ROLES       = ['Founder', 'Co-Founder', 'Investor', 'Angel Investor', 'Builder / Developer', 'Educator / Content Creator', 'Analyst / Researcher', 'Community Lead', 'DAO Contributor']
-const ECOSYSTEMS  = ['Ethereum', 'Solana', 'Bitcoin', 'Base', 'Arbitrum', 'Optimism', 'Cosmos', 'Sui', 'Aptos', 'Polygon', 'Avalanche', 'TON']
-const PLATFORMS   = ['X / Twitter', 'LinkedIn', 'Farcaster', 'Substack', 'GitHub', 'Mirror', 'Podcast']
+const NICHES     = ['DeFi', 'Bitcoin', 'RWA', 'DePIN', 'NFT', 'DAO', 'GameFi', 'SocialFi', 'AI x Crypto', 'Stablecoins', 'Payments', 'ZK / Privacy', 'Modular Blockchain']
+const ROLES      = ['Founder', 'Co-Founder', 'Investor', 'Angel Investor', 'Builder / Developer', 'Educator / Content Creator', 'Analyst / Researcher', 'Community Lead', 'DAO Contributor']
+const ECOSYSTEMS = ['Ethereum', 'Solana', 'Bitcoin', 'Base', 'Arbitrum', 'Optimism', 'Cosmos', 'Sui', 'Aptos', 'Polygon', 'Avalanche', 'TON']
+const PLATFORMS  = ['X / Twitter', 'LinkedIn', 'Farcaster', 'Substack', 'GitHub', 'Mirror', 'Podcast']
+
+// ─── MultiSelectPills ─────────────────────────────────────────────────────────
+
+function MultiSelectPills({ label, options, selected, onToggle }: {
+  label:    string
+  options:  string[]
+  selected: string[]
+  onToggle: (v: string) => void
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
+        {selected.length > 0 && (
+          <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-semibold">
+            {selected.length} selected
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map(o => (
+          <button
+            key={o}
+            type="button"
+            onClick={() => onToggle(o)}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+              selected.includes(o)
+                ? 'bg-primary/10 border-primary/40 text-primary'
+                : 'bg-secondary border-border text-muted-foreground hover:text-foreground hover:border-primary/20'
+            )}
+          >
+            {o}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 // ─── ProspectCard ─────────────────────────────────────────────────────────────
 
 function ProspectCard({ prospect, index, alreadySaved, onSave }: {
-  prospect:     Prospect
-  index?:       number
+  prospect:      Prospect
+  index?:        number
   alreadySaved?: boolean
-  onSave:       (p: Prospect, index?: number) => Promise<void>
+  onSave:        (p: Prospect, index?: number) => Promise<void>
 }) {
   const [saving,   setSaving]   = useState(false)
   const [saved,    setSaved]    = useState(alreadySaved ?? false)
   const [expanded, setExpanded] = useState(false)
-
-  // Sync with parent-controlled alreadySaved
-  useState(() => { if (alreadySaved) setSaved(true) })
 
   const handle = async () => {
     if (saved) return
@@ -103,8 +139,6 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
               {[prospect.role, prospect.company].filter(Boolean).join(' · ')}
             </p>
           )}
-
-          {/* Email — highlighted if found */}
           {prospect.email ? (
             <div className="flex items-center gap-1.5 mt-1">
               <Mail className="w-3 h-3 text-green-400 shrink-0" />
@@ -121,7 +155,6 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
           )}
         </div>
 
-        {/* Save button */}
         <button
           onClick={handle}
           disabled={saving || saved}
@@ -170,8 +203,6 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
             <Globe className="w-2.5 h-2.5" /> site <ExternalLink className="w-2.5 h-2.5" />
           </a>
         )}
-
-        {/* Expand toggle */}
         <button
           onClick={() => setExpanded(v => !v)}
           className="ml-auto flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground"
@@ -180,7 +211,6 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
         </button>
       </div>
 
-      {/* Expanded detail */}
       {expanded && (
         <div className="border-t border-border px-4 py-3 space-y-2">
           {prospect.beliefSignal && (
@@ -194,6 +224,14 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
               ))}
             </div>
           )}
+          {prospect.notes && (
+            <p className="text-[11px] text-muted-foreground">{prospect.notes}</p>
+          )}
+          {prospect.confidenceReason && (
+            <p className={cn('text-[11px]', CONFIDENCE_COLOR[prospect.confidence])}>
+              {prospect.confidence} confidence — {prospect.confidenceReason}
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -203,12 +241,12 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export function ResearchPanel() {
-  const router  = useRouter()
-  const [tab,   setTab]   = useState<'discover' | 'lookup'>('discover')
+  const router = useRouter()
+  const [tab, setTab] = useState<'discover' | 'lookup'>('discover')
 
   // Discovery state
   const [criteria, setCriteria] = useState<DiscoveryCriteria>({
-    niche: '', role: '', ecosystem: '', beliefSignal: '', platform: '',
+    niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '',
   })
   const [prospects,     setProspects]     = useState<Prospect[]>([])
   const [discovering,   setDiscovering]   = useState(false)
@@ -224,10 +262,17 @@ export function ResearchPanel() {
   const [lookupError,  setLookupError]  = useState('')
   const [lookupSaved,  setLookupSaved]  = useState(false)
 
-  const set = (key: keyof DiscoveryCriteria) => (v: string) =>
-    setCriteria(prev => ({ ...prev, [key]: v }))
+  // Multi-select toggle for array fields
+  const toggle = (key: keyof Omit<DiscoveryCriteria, 'beliefSignal'>) => (value: string) =>
+    setCriteria(prev => {
+      const arr = prev[key] as string[]
+      return { ...prev, [key]: arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value] }
+    })
 
-  const hasAnyCriteria = Object.values(criteria).some(v => v.trim())
+  const hasAnyCriteria =
+    criteria.niches.length > 0 || criteria.roles.length > 0 ||
+    criteria.ecosystems.length > 0 || criteria.platforms.length > 0 ||
+    criteria.beliefSignal.trim() !== ''
 
   // ── Discover ────────────────────────────────────────────────────────────────
 
@@ -251,6 +296,8 @@ export function ResearchPanel() {
     finally   { setDiscovering(false) }
   }
 
+  // ── Save All ─────────────────────────────────────────────────────────────────
+
   const handleSaveAll = async () => {
     if (!prospects.length) return
     setSavingAll(true)
@@ -266,28 +313,17 @@ export function ResearchPanel() {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          name:           p.name,
-          role:           p.role           ?? '',
-          company:        p.company        ?? '',
-          companyWebsite: p.companyWebsite ?? '',
-          linkedinUrl:    p.linkedinUrl    ?? '',
-          twitterUrl:     p.twitterUrl     ?? '',
-          email:          p.email          ?? '',
-          emailSource:    p.emailSource    ?? '',
-          cryptoNiche:    p.cryptoNiche    ?? '',
-          beliefSignal:   p.beliefSignal   ?? '',
-          activityLevel:  p.activityLevel  ?? 'UNKNOWN',
-          tags:           p.tags           ?? [],
-          priority:       p.priority       ?? 'C',
-          status:         'NEW',
-          sourceFound:    p.sourceFound    ?? undefined,
-          notes:          '',
-          emailVerified:  false,
-          emailType:      'UNKNOWN',
+          name: p.name, role: p.role ?? '', company: p.company ?? '',
+          companyWebsite: p.companyWebsite ?? '', linkedinUrl: p.linkedinUrl ?? '',
+          twitterUrl: p.twitterUrl ?? '', email: p.email ?? '',
+          emailSource: p.emailSource ?? '', cryptoNiche: p.cryptoNiche ?? '',
+          beliefSignal: p.beliefSignal ?? '', activityLevel: p.activityLevel ?? 'UNKNOWN',
+          tags: p.tags ?? [], priority: p.priority ?? 'C', status: 'NEW',
+          sourceFound: p.sourceFound ?? undefined, notes: '',
+          emailVerified: false, emailType: 'UNKNOWN',
         }),
       })
-      if (res.status === 201) { created++; newSaved.add(i) }
-      else skipped++ // 409 duplicate or other
+      if (res.status === 201) { created++; newSaved.add(i) } else skipped++
     }
 
     setSavedIndexes(newSaved)
@@ -295,26 +331,24 @@ export function ResearchPanel() {
     setSavingAll(false)
   }
 
+  // ── Export CSV ───────────────────────────────────────────────────────────────
+
   const handleExportCSV = () => {
     if (!prospects.length) return
-
     const headers = [
       'name','role','company','companyWebsite','linkedinUrl','twitterUrl',
       'farcasterUrl','email','emailSource','cryptoNiche','beliefSignal',
       'activityLevel','tags','priority','priorityReason','sourceFound','confidence',
     ]
-
     const escape = (v: any) => {
       if (v === null || v === undefined) return ''
       const s = Array.isArray(v) ? v.join('; ') : String(v)
       return `"${s.replace(/"/g, '""')}"`
     }
-
     const rows = [
       headers.join(','),
       ...prospects.map(p => headers.map(h => escape((p as any)[h])).join(',')),
     ]
-
     const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
@@ -345,31 +379,21 @@ export function ResearchPanel() {
     finally   { setLooking(false) }
   }
 
-  // ── Save as lead (shared) ────────────────────────────────────────────────────
+  // ── Save as lead ─────────────────────────────────────────────────────────────
 
   const saveAsLead = async (p: Prospect, index?: number) => {
     const res = await fetch('/api/leads', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
-        name:           p.name,
-        role:           p.role           ?? '',
-        company:        p.company        ?? '',
-        companyWebsite: p.companyWebsite ?? '',
-        linkedinUrl:    p.linkedinUrl    ?? '',
-        twitterUrl:     p.twitterUrl     ?? '',
-        email:          p.email          ?? '',
-        emailSource:    p.emailSource    ?? '',
-        cryptoNiche:    p.cryptoNiche    ?? '',
-        beliefSignal:   p.beliefSignal   ?? '',
-        activityLevel:  p.activityLevel  ?? 'UNKNOWN',
-        tags:           p.tags           ?? [],
-        priority:       p.priority       ?? 'C',
-        status:         'NEW',
-        sourceFound:    p.sourceFound    ?? undefined,
-        notes:          p.notes          ?? '',
-        emailVerified:  false,
-        emailType:      'UNKNOWN',
+        name: p.name, role: p.role ?? '', company: p.company ?? '',
+        companyWebsite: p.companyWebsite ?? '', linkedinUrl: p.linkedinUrl ?? '',
+        twitterUrl: p.twitterUrl ?? '', email: p.email ?? '',
+        emailSource: p.emailSource ?? '', cryptoNiche: p.cryptoNiche ?? '',
+        beliefSignal: p.beliefSignal ?? '', activityLevel: p.activityLevel ?? 'UNKNOWN',
+        tags: p.tags ?? [], priority: p.priority ?? 'C', status: 'NEW',
+        sourceFound: p.sourceFound ?? undefined, notes: p.notes ?? '',
+        emailVerified: false, emailType: 'UNKNOWN',
       }),
     })
     if (res.ok) {
@@ -383,30 +407,7 @@ export function ResearchPanel() {
     }
   }
 
-  const SelectPill = ({ label, options, value, onChange }: {
-    label: string; options: string[]; value: string; onChange: (v: string) => void
-  }) => (
-    <div className="space-y-1.5">
-      <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map(o => (
-          <button
-            key={o}
-            type="button"
-            onClick={() => onChange(value === o ? '' : o)}
-            className={cn(
-              'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
-              value === o
-                ? 'bg-primary/10 border-primary/40 text-primary'
-                : 'bg-secondary border-border text-muted-foreground hover:text-foreground hover:border-primary/20'
-            )}
-          >
-            {o}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -437,24 +438,54 @@ export function ResearchPanel() {
       {tab === 'discover' && (
         <div className="space-y-5">
           <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-            <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-primary" />
-              <p className="text-sm font-medium">Describe the type of person you want to find</p>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-primary" />
+                <p className="text-sm font-medium">Describe the type of person you want to find</p>
+              </div>
+              {hasAnyCriteria && (
+                <button
+                  onClick={() => setCriteria({ niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '' })}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Clear all
+                </button>
+              )}
             </div>
 
-            <SelectPill label="Niche"      options={NICHES}     value={criteria.niche}        onChange={set('niche')}        />
-            <SelectPill label="Role"       options={ROLES}      value={criteria.role}         onChange={set('role')}         />
-            <SelectPill label="Ecosystem"  options={ECOSYSTEMS} value={criteria.ecosystem}    onChange={set('ecosystem')}    />
-            <SelectPill label="Find on"    options={PLATFORMS}  value={criteria.platform}     onChange={set('platform')}     />
+            <MultiSelectPills
+              label="Niche — select one or more"
+              options={NICHES}
+              selected={criteria.niches}
+              onToggle={toggle('niches')}
+            />
+            <MultiSelectPills
+              label="Role — select one or more"
+              options={ROLES}
+              selected={criteria.roles}
+              onToggle={toggle('roles')}
+            />
+            <MultiSelectPills
+              label="Ecosystem — select one or more"
+              options={ECOSYSTEMS}
+              selected={criteria.ecosystems}
+              onToggle={toggle('ecosystems')}
+            />
+            <MultiSelectPills
+              label="Find on — select one or more platforms"
+              options={PLATFORMS}
+              selected={criteria.platforms}
+              onToggle={toggle('platforms')}
+            />
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-                Belief / Signal Keyword <span className="normal-case font-normal">(optional — e.g. "decentralization", "sound money")</span>
+                Belief / Signal Keyword <span className="normal-case font-normal">(optional)</span>
               </label>
               <input
                 type="text"
                 value={criteria.beliefSignal}
-                onChange={e => set('beliefSignal')(e.target.value)}
+                onChange={e => setCriteria(prev => ({ ...prev, beliefSignal: e.target.value }))}
                 placeholder="e.g. financial sovereignty, building on-chain, DeFi summer…"
                 className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
               />
@@ -484,7 +515,7 @@ export function ResearchPanel() {
               <div className="text-center">
                 <p className="text-sm font-medium">Searching across the web…</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Scanning X, LinkedIn, Farcaster, newsletters, podcasts, DAO forums and more. Also looking for public emails.
+                  Scanning {criteria.platforms.length > 0 ? criteria.platforms.join(', ') : 'X, LinkedIn, Farcaster, and more'} — also hunting for public emails
                 </p>
               </div>
             </div>
@@ -505,8 +536,7 @@ export function ResearchPanel() {
                     onClick={handleExportCSV}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary border border-border rounded-md text-xs font-medium hover:bg-secondary/80"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    Export CSV
+                    <Download className="w-3.5 h-3.5" /> Export CSV
                   </button>
                   <button
                     onClick={handleSaveAll}
@@ -517,19 +547,14 @@ export function ResearchPanel() {
                       ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
                       : savedIndexes.size === prospects.length
                       ? <><CheckCircle className="w-3.5 h-3.5" /> All Saved</>
-                      : <><SaveAll className="w-3.5 h-3.5" /> Save All {prospects.length - savedIndexes.size} to CRM</>
-                    }
+                      : <><SaveAll className="w-3.5 h-3.5" /> Save All {prospects.length - savedIndexes.size} to CRM</>}
                   </button>
-                  <button
-                    onClick={handleDiscover}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                  >
+                  <button onClick={handleDiscover} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
                     <RefreshCw className="w-3 h-3" /> Search again
                   </button>
                 </div>
               </div>
 
-              {/* Save all result feedback */}
               {saveAllResult && (
                 <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-lg text-xs">
                   <CheckCircle className="w-3.5 h-3.5 text-green-400 shrink-0" />
@@ -603,7 +628,7 @@ export function ResearchPanel() {
           {lookupResult && !looking && (
             <ProspectCard
               prospect={lookupResult}
-              onSave={async (p) => { await saveAsLead(p) }}
+              onSave={saveAsLead}
             />
           )}
         </div>
