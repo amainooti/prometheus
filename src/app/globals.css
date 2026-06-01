@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 20% 8%;
+    --foreground: 210 20% 95%;
+
+    --card: 222 20% 11%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 222 20% 11%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 30 95% 54%;          /* Bitcoin orange */
+    --primary-foreground: 222 20% 8%;
+
+    --secondary: 222 20% 15%;
+    --secondary-foreground: 210 20% 95%;
+
+    --muted: 222 20% 15%;
+    --muted-foreground: 215 16% 55%;
+
+    --accent: 163 95% 41%;          /* DeFi green */
+    --accent-foreground: 222 20% 8%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 20% 95%;
+
+    --border: 222 20% 18%;
+    --input: 222 20% 15%;
+    --ring: 30 95% 54%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Mobile-first scrollbar */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground;
+  }
+}
+
+@layer utilities {
+  /* Responsive table wrapper — horizontal scroll on mobile */
+  .table-responsive {
+    @apply w-full overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0;
+  }
+
+  /* Truncate text with ellipsis */
+  .truncate-cell {
+    @apply max-w-[140px] truncate sm:max-w-none;
+  }
+
+  /* Priority badge colors */
+  .badge-a-plus  { @apply bg-orange-500/20 text-orange-400 border border-orange-500/30; }
+  .badge-a       { @apply bg-yellow-500/20 text-yellow-400 border border-yellow-500/30; }
+  .badge-b       { @apply bg-blue-500/20   text-blue-400   border border-blue-500/30;   }
+  .badge-c       { @apply bg-slate-500/20  text-slate-400  border border-slate-500/30;  }
+  .badge-d       { @apply bg-red-500/20    text-red-400    border border-red-500/30;    }
+
+  /* Email confidence badge colors */
+  .badge-high     { @apply bg-green-500/20  text-green-400  border border-green-500/30;  }
+  .badge-medium   { @apply bg-yellow-500/20 text-yellow-400 border border-yellow-500/30; }
+  .badge-low      { @apply bg-slate-500/20  text-slate-400  border border-slate-500/30;  }
+  .badge-dnc      { @apply bg-red-500/20    text-red-400    border border-red-500/30;    }
+
+  /* Status badge colors */
+  .badge-new             { @apply bg-blue-500/20   text-blue-400   border border-blue-500/30;   }
+  .badge-reviewed        { @apply bg-purple-500/20 text-purple-400 border border-purple-500/30; }
+  .badge-email-found     { @apply bg-cyan-500/20   text-cyan-400   border border-cyan-500/30;   }
+  .badge-email-verified  { @apply bg-teal-500/20   text-teal-400   border border-teal-500/30;   }
+  .badge-ready           { @apply bg-green-500/20  text-green-400  border border-green-500/30;  }
+  .badge-contacted       { @apply bg-orange-500/20 text-orange-400 border border-orange-500/30; }
+  .badge-replied         { @apply bg-lime-500/20   text-lime-400   border border-lime-500/30;   }
+  .badge-not-relevant    { @apply bg-slate-500/20  text-slate-400  border border-slate-500/30;  }
+  .badge-do-not-contact  { @apply bg-red-500/20    text-red-400    border border-red-500/30;    }
+
+  /* Sidebar nav active state */
+  .nav-active {
+    @apply bg-primary/10 text-primary border-r-2 border-primary;
+  }
+
+  /* Mobile sidebar overlay */
+  .sidebar-overlay {
+    @apply fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden;
+  }
+}

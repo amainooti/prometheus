@@ -1,21 +1,31 @@
 import type { Metadata } from 'next'
-import { Sidebar } from '@/components/layout'
-import '@/app/globals.css'
+import { Inter } from 'next/font/google'
+import './globals.css'
+import { Sidebar } from '@/components/layout/Sidebar'
+import { TopBar } from '@/components/layout/TopBar'
+
+const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Crypto Lead CRM',
-  description: 'Lead management system for crypto businesses',
+  title: 'CryptoLeads CRM',
+  description: 'Manual crypto-native lead research and organization tool',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="bg-gray-100">
-        <div className="flex h-screen">
+    <html lang="en" className="dark">
+      <body className={`${inter.className} bg-background text-foreground antialiased`}>
+        <div className="flex h-screen overflow-hidden">
+          {/* Desktop sidebar */}
           <Sidebar />
-          <main className="flex-1 overflow-auto">
-            {children}
-          </main>
+
+          {/* Main content area */}
+          <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+            <TopBar />
+            <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+              {children}
+            </main>
+          </div>
         </div>
       </body>
     </html>
