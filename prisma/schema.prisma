@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enum Priority {
+  A_PLUS
+  A
+  B
+  C
+  D
+}
+
+enum EmailConfidence {
+  HIGH
+  MEDIUM
+  LOW
+  DO_NOT_CONTACT
+}
+
+enum LeadStatus {
+  NEW
+  REVIEWED
+  EMAIL_FOUND
+  EMAIL_VERIFIED
+  READY_TO_CONTACT
+  CONTACTED
+  REPLIED
+  NOT_RELEVANT
+  DO_NOT_CONTACT
+}
+
+enum EmailType {
+  PERSONAL
+  COMPANY
+  UNKNOWN
+}
+
+enum ActivityLevel {
+  VERY_ACTIVE
+  ACTIVE
+  MODERATE
+  LOW
+  UNKNOWN
+}
+
+enum LeadSource {
+  LINKEDIN
+  X_TWITTER
+  FARCASTER
+  LENS
+  DISCORD
+  TELEGRAM
+  SUBSTACK
+  MIRROR
+  MEDIUM
+  YOUTUBE
+  PODCAST
+  CRYPTO_EVENT
+  VC_PORTFOLIO
+  DAO_FORUM
+  GITHUB
+  COMPANY_WEBSITE
+  CRYPTO_NEWSLETTER
+  OTHER
+}
+
+enum KeywordCategory {
+  IDENTITY
+  FOUNDER_INVESTOR
+  BUILDER_CONTRIBUTOR
+  CONTENT_EDUCATION
+  BELIEF_PHILOSOPHY
+  RETAIL_HOLDER
+  ECOSYSTEM
+  NICHE
+  ACTIVITY_SIGNAL
+  EMAIL_DISCOVERY
+  EXCLUSION
+}
+
+// ─── MODELS ──────────────────────────────────────────────────────────────────
+
+model Lead {
+  id              String    @id @default(cuid())
+
+  // Basic info
+  name            String
+  linkedinUrl     String?
+  twitterUrl      String?
+  role            String?
+  company         String?
+  companyWebsite  String?
+
+  // Crypto profile
+  cryptoNiche     String?
+  beliefSignal    String?
+  activityLevel   ActivityLevel @default(UNKNOWN)
+  tags            String[]  // e.g. ["Bitcoin","DeFi","Founder"]
+
+  // Email
+  email           String?
+  emailSource     String?
+  emailConfidence EmailConfidence?
+  emailVerified   Boolean   @default(false)
+  emailType       EmailType @default(UNKNOWN)
+
+  // Scoring & status
+  priority        Priority  @default(C)
+  status          LeadStatus @default(NEW)
+
+  // Source & notes
+  sourceFound     LeadSource?
+  notes           String?
+
+  // Timestamps
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  emailChecklist  EmailChecklist?
+
+  @@index([status])
+  @@index([priority])
+  @@index([emailConfidence])
+  @@index([createdAt])
+}
+
+model EmailChecklist {
+  id                      String  @id @default(cuid())
+  leadId                  String  @unique
+  lead                    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  checkedLinkedinLinks    Boolean @default(false)
+  checkedTwitterBio       Boolean @default(false)
+  checkedPersonalWebsite  Boolean @default(false)
+  checkedCompanyWebsite   Boolean @default(false)
+  checkedTeamPage         Boolean @default(false)
+  checkedContactPage      Boolean @default(false)
+  checkedSubstack         Boolean @default(false)
+  checkedLinktree         Boolean @default(false)
+  usedDiscoveryTool       Boolean @default(false)
+  verifiedEmail           Boolean @default(false)
+
+  updatedAt               DateTime @updatedAt
+}
+
+model Keyword {
+  id        String          @id @default(cuid())
+  text      String
+  category  KeywordCategory
+  enabled   Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@unique([text, category])
+  @@index([category])
+  @@index([enabled])
+}
