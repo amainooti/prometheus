@@ -6,6 +6,7 @@ import {
   Search, Loader2, UserPlus, CheckCircle, AlertTriangle,
   Mail, ExternalLink, RefreshCw, Zap, User, Globe,
   Twitter, ChevronDown, ChevronUp, MailSearch,
+  Download, SaveAll,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PRIORITY_LABELS, ACTIVITY_LABELS } from '@/types'
@@ -59,14 +60,23 @@ const PLATFORMS   = ['X / Twitter', 'LinkedIn', 'Farcaster', 'Substack', 'GitHub
 
 // ─── ProspectCard ─────────────────────────────────────────────────────────────
 
-function ProspectCard({ prospect, onSave }: { prospect: Prospect; onSave: (p: Prospect) => Promise<void> }) {
+function ProspectCard({ prospect, index, alreadySaved, onSave }: {
+  prospect:     Prospect
+  index?:       number
+  alreadySaved?: boolean
+  onSave:       (p: Prospect, index?: number) => Promise<void>
+}) {
   const [saving,   setSaving]   = useState(false)
-  const [saved,    setSaved]    = useState(false)
+  const [saved,    setSaved]    = useState(alreadySaved ?? false)
   const [expanded, setExpanded] = useState(false)
 
+  // Sync with parent-controlled alreadySaved
+  useState(() => { if (alreadySaved) setSaved(true) })
+
   const handle = async () => {
+    if (saved) return
     setSaving(true)
-    await onSave(prospect)
+    await onSave(prospect, index)
     setSaved(true)
     setSaving(false)
   }
@@ -200,9 +210,12 @@ export function ResearchPanel() {
   const [criteria, setCriteria] = useState<DiscoveryCriteria>({
     niche: '', role: '', ecosystem: '', beliefSignal: '', platform: '',
   })
-  const [prospects, setProspects] = useState<Prospect[]>([])
-  const [discovering, setDiscovering] = useState(false)
+  const [prospects,     setProspects]     = useState<Prospect[]>([])
+  const [discovering,   setDiscovering]   = useState(false)
   const [discoverError, setDiscoverError] = useState('')
+  const [savedIndexes,  setSavedIndexes]  = useState<Set<number>>(new Set())
+  const [savingAll,     setSavingAll]     = useState(false)
+  const [saveAllResult, setSaveAllResult] = useState<{ created: number; skipped: number } | null>(null)
 
   // Lookup state
   const [lookupQuery,  setLookupQuery]  = useState('')
@@ -223,6 +236,8 @@ export function ResearchPanel() {
     setDiscovering(true)
     setDiscoverError('')
     setProspects([])
+    setSavedIndexes(new Set())
+    setSaveAllResult(null)
     try {
       const res  = await fetch('/api/research', {
         method:  'POST',
@@ -234,6 +249,79 @@ export function ResearchPanel() {
       setProspects(data.results ?? [])
     } catch { setDiscoverError('Network error') }
     finally   { setDiscovering(false) }
+  }
+
+  const handleSaveAll = async () => {
+    if (!prospects.length) return
+    setSavingAll(true)
+    setSaveAllResult(null)
+    let created = 0
+    let skipped = 0
+    const newSaved = new Set(savedIndexes)
+
+    for (let i = 0; i < prospects.length; i++) {
+      if (savedIndexes.has(i)) { skipped++; continue }
+      const p   = prospects[i]
+      const res = await fetch('/api/leads', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          name:           p.name,
+          role:           p.role           ?? '',
+          company:        p.company        ?? '',
+          companyWebsite: p.companyWebsite ?? '',
+          linkedinUrl:    p.linkedinUrl    ?? '',
+          twitterUrl:     p.twitterUrl     ?? '',
+          email:          p.email          ?? '',
+          emailSource:    p.emailSource    ?? '',
+          cryptoNiche:    p.cryptoNiche    ?? '',
+          beliefSignal:   p.beliefSignal   ?? '',
+          activityLevel:  p.activityLevel  ?? 'UNKNOWN',
+          tags:           p.tags           ?? [],
+          priority:       p.priority       ?? 'C',
+          status:         'NEW',
+          sourceFound:    p.sourceFound    ?? undefined,
+          notes:          '',
+          emailVerified:  false,
+          emailType:      'UNKNOWN',
+        }),
+      })
+      if (res.status === 201) { created++; newSaved.add(i) }
+      else skipped++ // 409 duplicate or other
+    }
+
+    setSavedIndexes(newSaved)
+    setSaveAllResult({ created, skipped })
+    setSavingAll(false)
+  }
+
+  const handleExportCSV = () => {
+    if (!prospects.length) return
+
+    const headers = [
+      'name','role','company','companyWebsite','linkedinUrl','twitterUrl',
+      'farcasterUrl','email','emailSource','cryptoNiche','beliefSignal',
+      'activityLevel','tags','priority','priorityReason','sourceFound','confidence',
+    ]
+
+    const escape = (v: any) => {
+      if (v === null || v === undefined) return ''
+      const s = Array.isArray(v) ? v.join('; ') : String(v)
+      return `"${s.replace(/"/g, '""')}"`
+    }
+
+    const rows = [
+      headers.join(','),
+      ...prospects.map(p => headers.map(h => escape((p as any)[h])).join(',')),
+    ]
+
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `prospects-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   // ── Lookup ──────────────────────────────────────────────────────────────────
@@ -259,7 +347,7 @@ export function ResearchPanel() {
 
   // ── Save as lead (shared) ────────────────────────────────────────────────────
 
-  const saveAsLead = async (p: Prospect) => {
+  const saveAsLead = async (p: Prospect, index?: number) => {
     const res = await fetch('/api/leads', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -286,10 +374,11 @@ export function ResearchPanel() {
     })
     if (res.ok) {
       const lead = await res.json()
-      // For lookup mode, redirect. For discover, just mark saved inline.
       if (tab === 'lookup') {
         setLookupSaved(true)
         setTimeout(() => router.push(`/leads/${lead.id}`), 800)
+      } else if (index !== undefined) {
+        setSavedIndexes(prev => new Set([...prev, index]))
       }
     }
   }
@@ -403,17 +492,62 @@ export function ResearchPanel() {
 
           {prospects.length > 0 && !discovering && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">{prospects.length} prospect{prospects.length !== 1 ? 's' : ''} found</p>
-                <button
-                  onClick={handleDiscover}
-                  className="flex items-center gap-1.5 text-xs text-primary hover:underline"
-                >
-                  <RefreshCw className="w-3 h-3" /> Search again
-                </button>
+              {/* Results action bar */}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-sm font-semibold">
+                  {prospects.length} prospect{prospects.length !== 1 ? 's' : ''} found
+                  {savedIndexes.size > 0 && (
+                    <span className="text-xs text-muted-foreground ml-2">· {savedIndexes.size} saved</span>
+                  )}
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={handleExportCSV}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary border border-border rounded-md text-xs font-medium hover:bg-secondary/80"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Export CSV
+                  </button>
+                  <button
+                    onClick={handleSaveAll}
+                    disabled={savingAll || savedIndexes.size === prospects.length}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {savingAll
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
+                      : savedIndexes.size === prospects.length
+                      ? <><CheckCircle className="w-3.5 h-3.5" /> All Saved</>
+                      : <><SaveAll className="w-3.5 h-3.5" /> Save All {prospects.length - savedIndexes.size} to CRM</>
+                    }
+                  </button>
+                  <button
+                    onClick={handleDiscover}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Search again
+                  </button>
+                </div>
               </div>
+
+              {/* Save all result feedback */}
+              {saveAllResult && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-lg text-xs">
+                  <CheckCircle className="w-3.5 h-3.5 text-green-400 shrink-0" />
+                  <span className="text-green-400 font-medium">{saveAllResult.created} saved to CRM</span>
+                  {saveAllResult.skipped > 0 && (
+                    <span className="text-muted-foreground">· {saveAllResult.skipped} skipped (already exist)</span>
+                  )}
+                </div>
+              )}
+
               {prospects.map((p, i) => (
-                <ProspectCard key={`${p.name}-${i}`} prospect={p} onSave={saveAsLead} />
+                <ProspectCard
+                  key={`${p.name}-${i}`}
+                  prospect={p}
+                  index={i}
+                  alreadySaved={savedIndexes.has(i)}
+                  onSave={saveAsLead}
+                />
               ))}
             </div>
           )}
@@ -469,9 +603,7 @@ export function ResearchPanel() {
           {lookupResult && !looking && (
             <ProspectCard
               prospect={lookupResult}
-              onSave={async (p) => {
-                await saveAsLead(p)
-              }}
+              onSave={async (p) => { await saveAsLead(p) }}
             />
           )}
         </div>
