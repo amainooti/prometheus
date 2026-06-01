@@ -131,7 +131,7 @@ function SidebarFooter() {
   return (
     <div className="px-4 py-3 border-t border-border shrink-0">
       <p className="text-[10px] text-muted-foreground">
-        Manual research only · No scraping
+        Made by oti❤️.
       </p>
     </div>
   )
