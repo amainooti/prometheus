@@ -1,0 +1,16 @@
+# ─── Supabase / PostgreSQL ─────────────────────────────────────────────────
+# Get these from: Supabase Dashboard → Project Settings → Database → Connection string
+
+# Pooled connection (used by Prisma Client at runtime — use "Transaction" mode)
+DATABASE_URL="postgresql://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?pgbouncer=true"
+
+# Direct connection (used by Prisma Migrate — bypasses PgBouncer)
+DIRECT_URL="postgresql://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres"
+
+# ─── Anthropic API ─────────────────────────────────────────────────────────
+# Get this from: https://console.anthropic.com → API Keys
+# Required for the AI Research feature (/research)
+ANTHROPIC_API_KEY="sk-ant-..."
+
+# ─── Next.js ───────────────────────────────────────────────────────────────
+NEXT_PUBLIC_APP_URL="http://localhost:3000"

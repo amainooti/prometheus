@@ -4,19 +4,14 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import {
-  LayoutDashboard,
-  BookOpen,
-  Search,
-  Users,
-  PlusCircle,
-  X,
-  Menu,
-  Zap,
+  LayoutDashboard, BookOpen, Search, Users,
+  PlusCircle, X, Menu, Zap, FlaskConical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const NAV = [
   { href: '/',          label: 'Dashboard',       icon: LayoutDashboard },
+  { href: '/research',  label: 'AI Research',     icon: FlaskConical,   badge: 'AI' },
   { href: '/keywords',  label: 'Keywords',         icon: BookOpen        },
   { href: '/queries',   label: 'Query Generator',  icon: Search          },
   { href: '/leads',     label: 'Leads',            icon: Users           },
@@ -25,10 +20,9 @@ const NAV = [
 
 function NavLinks({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname()
-
   return (
     <nav className="flex-1 px-3 py-4 space-y-1">
-      {NAV.map(({ href, label, icon: Icon }) => {
+      {NAV.map(({ href, label, icon: Icon, badge }) => {
         const active = pathname === href || (href !== '/' && pathname.startsWith(href))
         return (
           <Link
@@ -43,7 +37,12 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
             )}
           >
             <Icon className="w-4 h-4 shrink-0" />
-            {label}
+            <span className="flex-1">{label}</span>
+            {badge && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary">
+                {badge}
+              </span>
+            )}
           </Link>
         )
       })}
@@ -51,7 +50,6 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
   )
 }
 
-// Desktop sidebar (hidden on mobile)
 export function Sidebar() {
   return (
     <aside className="hidden lg:flex lg:flex-col lg:w-56 xl:w-64 border-r border-border bg-card shrink-0">
@@ -62,10 +60,8 @@ export function Sidebar() {
   )
 }
 
-// Mobile hamburger + drawer (used in TopBar)
 export function MobileSidebar() {
   const [open, setOpen] = useState(false)
-
   return (
     <>
       <button
@@ -75,29 +71,14 @@ export function MobileSidebar() {
       >
         <Menu className="w-5 h-5" />
       </button>
-
-      {/* Overlay */}
-      {open && (
-        <div
-          className="sidebar-overlay"
-          onClick={() => setOpen(false)}
-        />
-      )}
-
-      {/* Drawer */}
-      <div
-        className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border flex flex-col transition-transform duration-200 lg:hidden',
-          open ? 'translate-x-0' : '-translate-x-full'
-        )}
-      >
+      {open && <div className="sidebar-overlay" onClick={() => setOpen(false)} />}
+      <div className={cn(
+        'fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border flex flex-col transition-transform duration-200 lg:hidden',
+        open ? 'translate-x-0' : '-translate-x-full'
+      )}>
         <div className="flex items-center justify-between px-4 h-14 border-b border-border">
           <Logo />
-          <button
-            onClick={() => setOpen(false)}
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground"
-            aria-label="Close menu"
-          >
+          <button onClick={() => setOpen(false)} className="p-1 rounded-md text-muted-foreground hover:text-foreground">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -130,9 +111,7 @@ function SidebarHeader() {
 function SidebarFooter() {
   return (
     <div className="px-4 py-3 border-t border-border shrink-0">
-      <p className="text-[10px] text-muted-foreground">
-        Made by oti❤️.
-      </p>
+      <p className="text-[10px] text-muted-foreground">Made by Oti❤️</p>
     </div>
   )
 }
