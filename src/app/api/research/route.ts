@@ -1,195 +1,150 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+// ── Shared: extract final text from Claude response ──────────────────────────
+// When web search is used, Claude returns multiple content blocks.
+// We want the LAST text block which contains the final JSON answer.
+function extractText(data: any): string {
+  const blocks = data?.content ?? []
+  console.log('Response blocks:', JSON.stringify(blocks.map((b: any) => ({ type: b.type, text: b.text?.slice(0, 100) }))))
+
+  const textBlocks = blocks
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text?.trim())
+    .filter(Boolean)
+
+  // Take the last text block — that's always the final answer after tool use
+  return textBlocks[textBlocks.length - 1] ?? ''
+}
+
+// ── Shared: parse JSON robustly ───────────────────────────────────────────────
+function parseJSON(raw: string): any {
+  // Strip markdown fences
+  let clean = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+
+  // Try direct parse first
+  try { return JSON.parse(clean) } catch {}
+
+  // Try extracting first [...] or {...} block
+  const arrMatch = clean.match(/\[[\s\S]*\]/)
+  if (arrMatch) {
+    try { return JSON.parse(arrMatch[0]) } catch {}
+  }
+  const objMatch = clean.match(/\{[\s\S]*\}/)
+  if (objMatch) {
+    try { return JSON.parse(objMatch[0]) } catch {}
+  }
+
+  throw new Error('No valid JSON found in response')
+}
+
+// ── Shared: build Anthropic request ──────────────────────────────────────────
+async function callClaude(apiKey: string, system: string, userMessage: string, maxTokens = 4000) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type':      'application/json',
+      'x-api-key':         apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta':    'web-search-2025-03-05',
+    },
+    body: JSON.stringify({
+      model:      'claude-haiku-4-5',
+      max_tokens: maxTokens,
+      tools:      [{ type: 'web_search_20250305', name: 'web_search' }],
+      system,
+      messages:   [{ role: 'user', content: userMessage }],
+    }),
+  })
+
+  if (!response.ok) {
+    const err = await response.text()
+    console.error('Anthropic API error:', response.status, err)
+    throw new Error(`Anthropic API ${response.status}: ${err}`)
+  }
+
+  return response.json()
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { mode, query, criteria } = await req.json()
 
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 })
+      return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured in .env' }, { status: 500 })
     }
 
-    // ── DISCOVERY MODE — find strangers matching criteria ──────────────────
+    // ── DISCOVERY MODE ────────────────────────────────────────────────────────
     if (mode === 'discover') {
       const { niches, roles, ecosystems, platforms, beliefSignal } = criteria ?? {}
 
-      const niche     = niches?.join(', ')
-      const role      = roles?.join(', ')
-      const ecosystem = ecosystems?.join(', ')
-      const platform  = platforms?.join(', ')
+      const niche     = (niches     ?? []).join(', ')
+      const role      = (roles      ?? []).join(', ')
+      const ecosystem = (ecosystems ?? []).join(', ')
+      const platform  = (platforms  ?? []).join(', ')
 
-      const systemPrompt = `You are a crypto-native lead prospecting agent with access to web search. Your job is to find REAL, specific individuals who match a given profile — people the user has never heard of and could not find themselves without hours of manual research.
+      const systemPrompt = `You are a crypto lead prospecting agent. Find REAL individuals matching the given profile using web search. Also search for their public email (Twitter bio, personal site, GitHub, company site).
 
-Search across X/Twitter, LinkedIn, Farcaster, personal websites, Substack, Mirror, GitHub, DAO forums, podcast guest lists, crypto conference speaker lists, and any other public source.
+Respond with ONLY a raw JSON array — no markdown, no explanation. Up to 8 people:
+[{"name":"","role":"","company":"","companyWebsite":null,"linkedinUrl":null,"twitterUrl":null,"farcasterUrl":null,"email":null,"emailSource":null,"cryptoNiche":"","beliefSignal":"","activityLevel":"ACTIVE","tags":[],"priority":"A","priorityReason":"","sourceFound":"X_TWITTER","confidence":"HIGH"}]`
 
-For each person you find, also attempt to find their publicly listed email by checking:
-- Their Twitter/X bio or pinned tweet
-- Their LinkedIn contact info or website link
-- Their personal website contact or about page
-- Their Substack, Mirror, or newsletter footer
-- Their GitHub profile
-- Their company website team or contact page
-- Google search: "[name]" "[company]" email contact
-
-Return ONLY a valid JSON array of up to 10 real people. No preamble, no markdown, no explanation.
-
-Each object must match this shape exactly:
-{
-  "name": "Full Name",
-  "role": "Their actual role or title",
-  "company": "Company, project, or protocol",
-  "companyWebsite": "https://... or null",
-  "linkedinUrl": "https://linkedin.com/in/... or null",
-  "twitterUrl": "https://x.com/... or null",
-  "farcasterUrl": "https://warpcast.com/... or null",
-  "email": "publicly listed email or null",
-  "emailSource": "where the email was found or null",
-  "cryptoNiche": "their primary focus e.g. DeFi, RWA, Bitcoin, NFT",
-  "beliefSignal": "a real quote or phrase from their public bio/posts",
-  "activityLevel": "VERY_ACTIVE | ACTIVE | MODERATE | LOW | UNKNOWN",
-  "tags": ["Founder", "DeFi", "Ethereum"],
-  "priority": "A_PLUS | A | B | C | D",
-  "priorityReason": "Why this person matches the search criteria",
-  "sourceFound": "X_TWITTER | LINKEDIN | FARCASTER | GITHUB | SUBSTACK | MIRROR | PODCAST | CRYPTO_EVENT | OTHER",
-  "confidence": "HIGH | MEDIUM | LOW"
-}
-
-Priority rules:
-- A+: Founder or investor actively and publicly promoting blockchain/crypto/Web3
-- A: Strong crypto-native builder, educator, analyst, or prominent community voice
-- B: Active holder, DeFi user, NFT collector with clear public presence
-- C: Holds crypto or supports blockchain but posts lightly
-- D: Weak or vague interest
-
-Only return people you actually found through search. Do not invent anyone. If you find fewer than 10 real matches, return fewer — quality over quantity.`
-
-      const searchDescription = [
+      const parts = [
         role        && `Role: ${role}`,
         niche       && `Niche: ${niche}`,
         ecosystem   && `Ecosystem: ${ecosystem}`,
+        platform    && `Preferred platforms: ${platform}`,
         beliefSignal && `Belief signal: ${beliefSignal}`,
-        platform    && `Prefer finding them on: ${platform}`,
       ].filter(Boolean).join('\n')
 
-      const userMessage = `Find real crypto-native individuals matching this profile. Search broadly across all public platforms and also try to find their publicly listed emails:\n\n${searchDescription}\n\nReturn up to 10 real people as a JSON array.`
+      const userMessage = `Find real crypto-native people matching this profile. Also search for their emails. Return ONLY a JSON array:\n\n${parts}`
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type':      'application/json',
-          'x-api-key':         apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model:      'claude-sonnet-4-20250514',
-          max_tokens: 4000,
-          tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-          system:   systemPrompt,
-          messages: [{ role: 'user', content: userMessage }],
-        }),
-      })
+      const data = await callClaude(apiKey, systemPrompt, userMessage, 2000)
+      const text = extractText(data)
 
-      if (!response.ok) {
-        const err = await response.text()
-        return NextResponse.json({ error: 'AI search failed', detail: err }, { status: 500 })
+      console.log('Raw AI text (first 500):', text.slice(0, 500))
+
+      if (!text) {
+        return NextResponse.json({ error: 'No text response from AI', raw: data }, { status: 500 })
       }
 
-      const data = await response.json()
-      const text = data.content
-        ?.filter((b: any) => b.type === 'text')
-        ?.map((b: any) => b.text)
-        ?.join('')
-        ?.trim()
-
-      if (!text) return NextResponse.json({ error: 'No response from AI' }, { status: 500 })
-
       try {
-        const clean   = text.replace(/```json|```/g, '').trim()
-        const results = JSON.parse(clean)
+        const results = parseJSON(text)
         return NextResponse.json({ results: Array.isArray(results) ? results : [results] })
-      } catch {
-        return NextResponse.json({ error: 'Could not parse AI response', raw: text }, { status: 500 })
+      } catch (e: any) {
+        console.error('JSON parse failed:', e.message, '\nRaw text:', text.slice(0, 1000))
+        return NextResponse.json({ error: 'Could not parse AI response', raw: text.slice(0, 500) }, { status: 500 })
       }
     }
 
-    // ── LOOKUP MODE — research a specific known person ─────────────────────
+    // ── LOOKUP MODE ───────────────────────────────────────────────────────────
     if (mode === 'lookup') {
-      const systemPrompt = `You are a crypto-native lead research assistant with web search. Given a person's name, URL, or handle, find all publicly available information about them — and importantly, search hard for any publicly listed email address.
+      const systemPrompt = `You are a crypto research assistant. Research the given person using web search. Also find their public email (check Twitter bio, personal site, GitHub, company site).
 
-To find their email, check:
-- Twitter/X bio, pinned tweet, and linked website
-- LinkedIn about section and contact info
-- Their personal website contact/about page
-- Company website team or contact page
-- Substack, Mirror, or newsletter pages
-- GitHub profile
-- Google: "[name]" "[company]" email
+Respond with ONLY a raw JSON object — no markdown, no explanation:
+{"name":"","role":"","company":"","companyWebsite":null,"linkedinUrl":null,"twitterUrl":null,"email":null,"emailSource":null,"cryptoNiche":"","beliefSignal":"","activityLevel":"ACTIVE","tags":[],"priority":"A","priorityReason":"","sourceFound":"X_TWITTER","notes":"","confidence":"HIGH","confidenceReason":""}`
 
-Respond with ONLY a valid JSON object — no preamble, no markdown.
+      const data = await callClaude(apiKey, systemPrompt, `Research this person and find their email: ${query}`, 2000)
+      const text = extractText(data)
 
-{
-  "name": "Full Name",
-  "role": "Job title or role",
-  "company": "Company or project",
-  "companyWebsite": "https://... or null",
-  "linkedinUrl": "https://linkedin.com/in/... or null",
-  "twitterUrl": "https://x.com/... or null",
-  "email": "publicly listed email or null",
-  "emailSource": "where the email was found or null",
-  "cryptoNiche": "primary crypto focus",
-  "beliefSignal": "key quote or phrase from their public bio/posts",
-  "activityLevel": "VERY_ACTIVE | ACTIVE | MODERATE | LOW | UNKNOWN",
-  "tags": ["tag1", "tag2"],
-  "priority": "A_PLUS | A | B | C | D",
-  "priorityReason": "1-2 sentence explanation",
-  "sourceFound": "LINKEDIN | X_TWITTER | GITHUB | COMPANY_WEBSITE | OTHER",
-  "notes": "Any other relevant public context",
-  "confidence": "HIGH | MEDIUM | LOW",
-  "confidenceReason": "Why you are or are not confident in this data"
-}`
+      console.log('Lookup raw text (first 500):', text.slice(0, 500))
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type':      'application/json',
-          'x-api-key':         apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model:      'claude-sonnet-4-20250514',
-          max_tokens: 2000,
-          tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-          system:   systemPrompt,
-          messages: [{ role: 'user', content: `Research this person and find their email if publicly listed: ${query}` }],
-        }),
-      })
-
-      if (!response.ok) {
-        const err = await response.text()
-        return NextResponse.json({ error: 'AI lookup failed', detail: err }, { status: 500 })
+      if (!text) {
+        return NextResponse.json({ error: 'No text response from AI' }, { status: 500 })
       }
-
-      const data = await response.json()
-      const text = data.content
-        ?.filter((b: any) => b.type === 'text')
-        ?.map((b: any) => b.text)
-        ?.join('')
-        ?.trim()
-
-      if (!text) return NextResponse.json({ error: 'No response from AI' }, { status: 500 })
 
       try {
-        const clean  = text.replace(/```json|```/g, '').trim()
-        const result = JSON.parse(clean)
+        const result = parseJSON(text)
         return NextResponse.json({ result })
-      } catch {
-        return NextResponse.json({ error: 'Could not parse AI response', raw: text }, { status: 500 })
+      } catch (e: any) {
+        console.error('JSON parse failed:', e.message, '\nRaw:', text.slice(0, 1000))
+        return NextResponse.json({ error: 'Could not parse AI response', raw: text.slice(0, 500) }, { status: 500 })
       }
     }
 
-    return NextResponse.json({ error: 'Invalid mode' }, { status: 400 })
-  } catch (error) {
-    console.error('Research API error:', error)
-    return NextResponse.json({ error: 'Research failed' }, { status: 500 })
+    return NextResponse.json({ error: 'Invalid mode — must be discover or lookup' }, { status: 400 })
+
+  } catch (error: any) {
+    console.error('Research route error:', error)
+    return NextResponse.json({ error: error.message ?? 'Research failed' }, { status: 500 })
   }
 }
