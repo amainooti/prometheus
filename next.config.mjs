@@ -1,10 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverActions: {
-      allowedOrigins: ['localhost:3000'],
-    },
+    serverComponentsExternalPackages: ['@prisma/client', 'prisma'],
   },
+  serverExternalPackages: ['@prisma/client', 'prisma'],
 }
 
-export default nextConfig
+module.exports = nextConfig
