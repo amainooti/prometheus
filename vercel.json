@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/research": {
+    "src/app/api/research/route.ts": {
       "maxDuration": 60
     }
   }
