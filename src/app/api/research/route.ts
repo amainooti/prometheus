@@ -38,7 +38,7 @@ function parseJSON(raw: string): any {
 }
 
 // ── Shared: build Anthropic request ──────────────────────────────────────────
-async function callClaude(apiKey: string, system: string, userMessage: string, maxTokens = 4000) {
+async function callClaude(apiKey: string, system: string, userMessage: string, maxTokens = 2000) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
