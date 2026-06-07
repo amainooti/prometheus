@@ -20,6 +20,9 @@ interface Prospect {
   linkedinUrl:     string | null
   twitterUrl:      string | null
   farcasterUrl:    string | null
+  redditUrl:       string | null
+  quoraUrl:        string | null
+  truthSocialUrl:  string | null
   email:           string | null
   emailSource:     string | null
   cryptoNiche:     string | null
@@ -56,7 +59,7 @@ const CONFIDENCE_COLOR = {
 const NICHES     = ['DeFi', 'Bitcoin', 'RWA', 'DePIN', 'NFT', 'DAO', 'GameFi', 'SocialFi', 'AI x Crypto', 'Stablecoins', 'Payments', 'ZK / Privacy', 'Modular Blockchain']
 const ROLES      = ['Founder', 'Co-Founder', 'Investor', 'Angel Investor', 'Builder / Developer', 'Educator / Content Creator', 'Analyst / Researcher', 'Community Lead', 'DAO Contributor']
 const ECOSYSTEMS = ['Ethereum', 'Solana', 'Bitcoin', 'Base', 'Arbitrum', 'Optimism', 'Cosmos', 'Sui', 'Aptos', 'Polygon', 'Avalanche', 'TON']
-const PLATFORMS  = ['X / Twitter', 'LinkedIn', 'Farcaster', 'Substack', 'GitHub', 'Mirror', 'Podcast']
+const PLATFORMS  = ['X / Twitter', 'LinkedIn', 'Farcaster', 'Substack', 'GitHub', 'Mirror', 'Podcast', 'Reddit', 'Quora', 'Truth Social']
 
 // ─── MultiSelectPills ─────────────────────────────────────────────────────────
 
@@ -195,6 +198,24 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
           <a href={prospect.farcasterUrl} target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20">
             ⌀ <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+        )}
+        {prospect.redditUrl && (
+          <a href={prospect.redditUrl} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20">
+            Reddit <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+        )}
+        {prospect.quoraUrl && (
+          <a href={prospect.quoraUrl} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20">
+            Quora <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+        )}
+        {prospect.truthSocialUrl && (
+          <a href={prospect.truthSocialUrl} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20">
+            Truth <ExternalLink className="w-2.5 h-2.5" />
           </a>
         )}
         {prospect.companyWebsite && (
@@ -337,8 +358,9 @@ export function ResearchPanel() {
     if (!prospects.length) return
     const headers = [
       'name','role','company','companyWebsite','linkedinUrl','twitterUrl',
-      'farcasterUrl','email','emailSource','cryptoNiche','beliefSignal',
-      'activityLevel','tags','priority','priorityReason','sourceFound','confidence',
+      'farcasterUrl','redditUrl','quoraUrl','truthSocialUrl','email','emailSource',
+      'cryptoNiche','beliefSignal','activityLevel','tags','priority','priorityReason',
+      'sourceFound','confidence',
     ]
     const escape = (v: any) => {
       if (v === null || v === undefined) return ''
@@ -515,7 +537,7 @@ export function ResearchPanel() {
               <div className="text-center">
                 <p className="text-sm font-medium">Searching across the web…</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Scanning {criteria.platforms.length > 0 ? criteria.platforms.join(', ') : 'X, LinkedIn, Farcaster, and more'} — also hunting for public emails
+                  Scanning {criteria.platforms.length > 0 ? criteria.platforms.join(', ') : 'X, LinkedIn, Farcaster, Reddit, and more'} — also hunting for public emails
                 </p>
               </div>
             </div>
