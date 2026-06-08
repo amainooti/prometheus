@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { parseEcosystem } from '@/lib/scrapperUtils'
 
 // ── Shared: extract final text from Claude response ───────────────────────────
 function extractText(data: any): string {
@@ -182,7 +183,14 @@ export async function POST(req: NextRequest) {
 
       const niche            = (niches     ?? []).join(', ')
       const role             = (roles      ?? []).join(', ')
-      const primaryEcosystem = (ecosystems ?? [])[0] ?? 'Crypto'
+      const rawEcosystem    = (ecosystems ?? [])[0] ?? 'Crypto'
+      const ecoMeta         = parseEcosystem(rawEcosystem)
+      const primaryEcosystem = ecoMeta.displayName
+      const ecoSearchLabel  = ecoMeta.searchLabel
+      // For tickers, add both $TICKER and plain TICKER to search terms
+      const ecoSearchTerms  = ecoMeta.isTicker
+        ? [ecoMeta.ticker, ecoMeta.tickerClean, rawEcosystem].join(' OR ')
+        : primaryEcosystem
       const ecosystem        = (ecosystems ?? []).join(', ')
       const platform         = (platforms  ?? []).join(', ')
 
@@ -216,7 +224,7 @@ ${PROSPECT_SCHEMA}`
         callClaude(
           apiKey,
           systemPrompt(`GitHub users with personal ${primaryEcosystem} wallet scripts, staking tools, or DeFi automation repos — NOT core protocol contributors`),
-          `Find regular ${primaryEcosystem} holders on GitHub who have built personal wallet tools, staking dashboards, or on-chain scripts for their own use. Look for email in profile bio or README. Exclude protocol devs and foundation employees. Profile: ${parts}. Return JSON array only, max 10.`,
+          `Find regular ${primaryEcosystem} ${ecoMeta.isTicker ? "(ticker: " + ecoMeta.ticker + ")" : ""} holders on GitHub who have built personal wallet tools, staking dashboards, or on-chain scripts for their own use. Search for "${ecoSearchTerms}" in GitHub bio/repos. Look for email in profile bio or README. Profile: ${parts}. Return JSON array only, max 10.`,
           4000,
         ),
 
@@ -240,7 +248,7 @@ ${PROSPECT_SCHEMA}`
         callClaude(
           apiKey,
           systemPrompt(`Twitter/X accounts under 5,000 followers whose bio mentions holding, staking, or being a ${primaryEcosystem} maxi/believer — and who have a public email in their bio`),
-          `Find Twitter/X users with under 5K followers whose bio explicitly contains: "${primaryEcosystem} holder", "${primaryEcosystem} maxi", "staking", "DeFi", ENS name, or .sol name — AND a public email address. Exclude anyone with a blue checkmark or large following. Profile: ${parts}. Return JSON array only, max 10.`,
+          `Find Twitter/X users with under 5K followers whose bio explicitly contains: "${ecoSearchTerms} holder", "${primaryEcosystem} maxi", "staking", "DeFi", ticker mention "${ecoMeta.isTicker ? ecoMeta.ticker : primaryEcosystem}" — AND a public email address. Exclude anyone with a blue checkmark or large following. Profile: ${parts}. Return JSON array only, max 10.`,
           4000,
         ),
 

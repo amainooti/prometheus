@@ -204,7 +204,7 @@ function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(draft) } }}
-          placeholder="Type any ecosystem & press Enter — e.g. worldlibertyfi, PEPE, BRETT, HypeEVM…"
+          placeholder="Ecosystem name or ticker — e.g. $WLFI, $PEPE, $BRETT, worldlibertyfi, HypeEVM…"
           className="flex-1 bg-secondary border border-border rounded-md px-3 py-1.5 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
         />
         {draft.trim() && (

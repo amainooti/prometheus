@@ -99,3 +99,48 @@ export function normalizeProfile(raw: RawProfile) {
 export function sleep(ms: number) {
   return new Promise(r => setTimeout(r, ms))
 }
+
+// ── Ticker / ecosystem normalizer ─────────────────────────────────────────────
+// Detects whether the ecosystem value is a ticker (starts with $ or is ALL_CAPS
+// short token name) and returns both the raw value and search-friendly forms.
+
+export interface EcosystemMeta {
+  raw:          string   // exactly what the user typed e.g. "$WLFI" or "Solana"
+  isTicker:     boolean
+  ticker:       string   // "$WLFI" (with $) for tweet search
+  tickerClean:  string   // "WLFI" (without $) for text mentions
+  searchLabel:  string   // what to pass into prompts e.g. "$WLFI (WorldLibertyFi)"
+  displayName:  string   // human label for UI / tagging
+}
+
+export function parseEcosystem(raw: string): EcosystemMeta {
+  const trimmed = raw.trim()
+
+  // Treat as ticker if: starts with $ OR is 2-6 uppercase letters/digits
+  const hasDollar   = trimmed.startsWith('$')
+  const cleanTicker = hasDollar ? trimmed.slice(1).toUpperCase() : trimmed.toUpperCase()
+  const looksLikeTicker = hasDollar || /^[A-Z0-9]{2,6}$/.test(trimmed)
+
+  if (looksLikeTicker) {
+    const ticker  = `$${cleanTicker}`
+    return {
+      raw:         trimmed,
+      isTicker:    true,
+      ticker,
+      tickerClean: cleanTicker,
+      // Search label tells Claude to look for both forms
+      searchLabel: `${ticker} token/ecosystem (also search "${cleanTicker}" without the $ sign)`,
+      displayName: ticker,
+    }
+  }
+
+  // Regular ecosystem name (Ethereum, Solana, worldlibertyfi, etc.)
+  return {
+    raw:         trimmed,
+    isTicker:    false,
+    ticker:      `$${trimmed.toUpperCase()}`,
+    tickerClean: trimmed.toUpperCase(),
+    searchLabel: trimmed,
+    displayName: trimmed,
+  }
+}
