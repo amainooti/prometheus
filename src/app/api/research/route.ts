@@ -106,37 +106,63 @@ const PROSPECT_SCHEMA = `[{
   "confidence": "HIGH"
 }]`
 
-// ── Ecosystem detector: infer the most specific ecosystem from bio/activity ───
+// ── Ecosystem inference ───────────────────────────────────────────────────────
 function inferEcosystem(lead: any, searchedEcosystem: string): string {
-  // The searched ecosystem is the default. Claude may have returned a different
-  // one in the `ecosystem` field — respect that override if it's a non-empty,
-  // meaningful value that differs from the generic fallback.
   const aiEcosystem = (lead.ecosystem ?? '').trim()
-  if (aiEcosystem && aiEcosystem.toLowerCase() !== 'unknown') {
-    return aiEcosystem
-  }
+  if (aiEcosystem && aiEcosystem.toLowerCase() !== 'unknown') return aiEcosystem
   return searchedEcosystem
 }
 
-const SHARED_INSTRUCTIONS = `
-ECOSYSTEM TAGGING RULES:
-- Each person MUST have an "ecosystem" field set to their PRIMARY crypto ecosystem (e.g. "Solana", "Ethereum", "Bitcoin", "Avalanche", "Sui", "Base", "TON", etc.)
-- Default to the ecosystem specified in the search criteria UNLESS you find clear evidence the person is primarily active in a different ecosystem
-- A "maxi" or ecosystem loyalist should have that ecosystem listed even if they touch others
-- If someone is genuinely multi-chain, list their most active ecosystem
+// ── WHO TO EXCLUDE (injected into every discover prompt) ─────────────────────
+const EXCLUSION_RULES = `
+WHO TO EXCLUDE — never return these types:
+- Founders, co-founders, CEOs, CTOs, or C-suite executives of any crypto project or company
+- Protocol leads, core developers, or anyone officially employed by a blockchain foundation (e.g. Ethereum Foundation, Solana Foundation, Bitcoin Core)
+- VCs, fund managers, or partners at investment firms
+- Journalists, analysts, or researchers at major crypto media (CoinDesk, The Block, Decrypt, Bankless)
+- Anyone with more than 10,000 Twitter/X followers
+- Anyone whose primary identity is "thought leader", "influencer", or "KOL"
+- Well-known public figures in crypto (e.g. Vitalik Buterin, CZ, SBF, Anatoly Yakovenko, etc.)
+- Anyone whose email would be a corporate/foundation domain (e.g. @ethereum.org, @solana.com, @bitcoin.org)
 
-EMAIL HUNTING RULES — this is the most important part:
-- Every person MUST have a public email address. If you cannot find a public email, DO NOT include that person — skip them and find someone else who has one.
-- Search: [name] + "email" site:twitter.com OR site:github.com OR site:linkedin.com
+WHO TO TARGET INSTEAD — the long tail of genuine believers:
+- Regular retail holders who mention holding, staking, or accumulating a specific ecosystem's token in their bio or posts
+- Small community voices: active in forums, subreddits, Discord, or Telegram but under 5K–10K followers
+- DeFi users who mention using protocols (lending, swapping, yield farming) in a specific ecosystem
+- People whose GitHub shows personal wallet tools, scripts, or on-chain experiments — not protocol dev
+- Forum members who post about their own holdings, staking rewards, or on-chain activity
+- Substack or blog writers with small audiences (under 2K subscribers) who document their own crypto journey
+- Reddit contributors who post about their own portfolio, staking, or ecosystem participation
+- People who mention wallet addresses, ENS names, or on-chain activity in their bio
+
+HOLDER / BELIEF SIGNALS to look for in bios and posts:
+- "holding X", "staking X", "accumulating X", "diamond hands", "bought the dip"
+- "X maxi", "X believer", "X native", "X ecosystem"
+- Mentions of DeFi protocols they personally use (Aave, Uniswap, Jupiter, etc.)
+- ENS names, .sol names, or other ecosystem domain names in their profile
+- Personal on-chain activity mentions (yield, rewards, bridging, LP positions)
+- Small personal blogs or newsletters documenting their crypto journey`
+
+// ── EMAIL RULES (shared) ──────────────────────────────────────────────────────
+const EMAIL_RULES = `
+EMAIL HUNTING RULES — most important:
+- Every person MUST have a confirmed public email. No email = skip that person entirely.
+- Search: [name] + "email" site:github.com OR site:twitter.com OR site:linkedin.com
 - Check GitHub profile bio and README files for email
-- Check Twitter/X bio explicitly for @ or email strings
+- Check Twitter/X bio for email strings
 - Check their personal website /contact page
-- Check Substack or Mirror author pages for contact info
-- Check Bitcointalk profile signature lines which often contain emails
-- Only include people where you have FOUND a real public email — not guessed
-- If a batch of 10 candidates only yields 4 with emails, return only those 4. Do NOT pad with no-email leads.
+- Check Substack or blog author pages
+- Do NOT include corporate/foundation emails (@ethereum.org, @solana.com etc.)
+- Only real, personal public emails count
 
-CRITICAL: Return ONLY a raw JSON array. No text before or after. No explanation. No preamble. Start with [ and end with ].`
+CRITICAL: Return ONLY a raw JSON array. No text before or after. Start with [ and end with ].`
+
+// ── ECOSYSTEM RULES (shared) ──────────────────────────────────────────────────
+const ECOSYSTEM_RULES = `
+ECOSYSTEM TAGGING:
+- Set "ecosystem" to the person's PRIMARY ecosystem (e.g. "Solana", "Ethereum", "Bitcoin")
+- Default to the searched ecosystem unless you find clear evidence of a different primary one
+- Maxis and loyalists should always have that ecosystem listed`
 
 export async function POST(req: NextRequest) {
   try {
@@ -154,12 +180,11 @@ export async function POST(req: NextRequest) {
     if (mode === 'discover') {
       const { niches, roles, ecosystems, platforms, beliefSignal } = criteria ?? {}
 
-      const niche     = (niches     ?? []).join(', ')
-      const role      = (roles      ?? []).join(', ')
-      // Primary ecosystem for tagging — use the first one if multiple provided
+      const niche            = (niches     ?? []).join(', ')
+      const role             = (roles      ?? []).join(', ')
       const primaryEcosystem = (ecosystems ?? [])[0] ?? 'Crypto'
-      const ecosystem = (ecosystems ?? []).join(', ')
-      const platform  = (platforms  ?? []).join(', ')
+      const ecosystem        = (ecosystems ?? []).join(', ')
+      const platform         = (platforms  ?? []).join(', ')
 
       const parts = [
         role         && `Role: ${role}`,
@@ -169,83 +194,85 @@ export async function POST(req: NextRequest) {
         beliefSignal && `Belief signal / keywords: ${beliefSignal}`,
       ].filter(Boolean).join('\n')
 
-      // ── 8 parallel searches across different sources / angles ─────────────
-      // Each search targets a different source pool and returns up to 10 leads.
-      // All must have public emails.
+      // ── System prompt factory ─────────────────────────────────────────────
+      const systemPrompt = (sourceDesc: string) => `You are a crypto lead researcher specialising in finding RETAIL HOLDERS and SMALL COMMUNITY VOICES — NOT celebrities, founders, or influencers. You focus on ${sourceDesc}.
 
-      const systemPrompt = (source: string) =>
-        `You are an expert crypto lead prospecting agent. Find REAL crypto-native people or believers who have PUBLIC email addresses and are specifically active in the ${primaryEcosystem} ecosystem. Focus on ${source}.
-
+Target ecosystem: ${primaryEcosystem}
 Profile to match:
 ${parts}
 
-${SHARED_INSTRUCTIONS}
+${EXCLUSION_RULES}
 
-Schema (return up to 10 per search — ONLY include people with a confirmed public email):
+${ECOSYSTEM_RULES}
+
+${EMAIL_RULES}
+
+Schema (return up to 10 per search — ONLY include people with a confirmed personal public email):
 ${PROSPECT_SCHEMA}`
 
+      // ── 8 parallel searches, each angled at a different long-tail source ──
       const searches = [
-        // 1 — GitHub (highest email hit rate)
+        // 1 — GitHub: personal wallet tools, scripts, DeFi experiments
         callClaude(
           apiKey,
-          systemPrompt(`GitHub profiles with ${primaryEcosystem} repos and email in bio or README`),
-          `Find ${primaryEcosystem}-native people with PUBLIC emails on GitHub. Check profile bio, pinned repos, and README files. Profile: ${parts}. Return JSON array only, max 10.`,
+          systemPrompt(`GitHub users with personal ${primaryEcosystem} wallet scripts, staking tools, or DeFi automation repos — NOT core protocol contributors`),
+          `Find regular ${primaryEcosystem} holders on GitHub who have built personal wallet tools, staking dashboards, or on-chain scripts for their own use. Look for email in profile bio or README. Exclude protocol devs and foundation employees. Profile: ${parts}. Return JSON array only, max 10.`,
           4000,
         ),
 
-        // 2 — Substack + Mirror newsletter authors
+        // 2 — Substack/Mirror: small personal crypto journey blogs
         callClaude(
           apiKey,
-          systemPrompt(`Substack ${primaryEcosystem} newsletter authors and Mirror.xyz writers`),
-          `Find ${primaryEcosystem} ecosystem newsletter authors with PUBLIC emails on Substack author pages and Mirror.xyz profiles. Profile: ${parts}. Return JSON array only, max 10.`,
+          systemPrompt(`Substack and Mirror authors with under 2,000 subscribers who document their personal ${primaryEcosystem} holdings, staking, or DeFi journey`),
+          `Find small Substack or Mirror writers (under 2K subscribers) who write about their personal ${primaryEcosystem} crypto journey — holding, staking, yield farming, buying dips. Look for personal email on author page. Exclude major media writers and thought leaders. Profile: ${parts}. Return JSON array only, max 10.`,
           4000,
         ),
 
-        // 3 — Bitcointalk / ecosystem-specific forums
+        // 3 — Reddit: active contributors in ecosystem subreddits
         callClaude(
           apiKey,
-          systemPrompt(`Bitcointalk.org members and ${primaryEcosystem}-specific forum contributors (e.g. solana forums, ethereum magicians, commonwealth DAO)`),
-          `Find ${primaryEcosystem} believers with PUBLIC emails from Bitcointalk signatures, Ethereum Magicians, Commonwealth DAO governance, or ${primaryEcosystem} forums. Profile: ${parts}. Return JSON array only, max 10.`,
+          systemPrompt(`Reddit contributors in r/${primaryEcosystem.toLowerCase()}, r/ethfinance, r/solana, r/bitcoin, r/defi, r/CryptoCurrency who discuss their own holdings and have linked personal sites with emails`),
+          `Find Reddit users who actively post about their own ${primaryEcosystem} holdings, staking rewards, or DeFi activity. Must have a linked personal site or email visible. Exclude moderators with large followings. Profile: ${parts}. Return JSON array only, max 10.`,
           4000,
         ),
 
-        // 4 — Twitter/X bios with email
+        // 4 — Twitter/X: small accounts with holder signals in bio
         callClaude(
           apiKey,
-          systemPrompt(`Twitter/X ${primaryEcosystem} accounts with email address visible in their bio`),
-          `Find ${primaryEcosystem}-native people whose Twitter/X bio explicitly contains a public email address. Profile: ${parts}. Return JSON array only, max 10.`,
+          systemPrompt(`Twitter/X accounts under 5,000 followers whose bio mentions holding, staking, or being a ${primaryEcosystem} maxi/believer — and who have a public email in their bio`),
+          `Find Twitter/X users with under 5K followers whose bio explicitly contains: "${primaryEcosystem} holder", "${primaryEcosystem} maxi", "staking", "DeFi", ENS name, or .sol name — AND a public email address. Exclude anyone with a blue checkmark or large following. Profile: ${parts}. Return JSON array only, max 10.`,
           4000,
         ),
 
-        // 5 — Reddit crypto profiles with linked personal sites
+        // 5 — Forums: Bitcointalk, Ethereum Magicians, Commonwealth
         callClaude(
           apiKey,
-          systemPrompt(`Reddit contributors in r/${primaryEcosystem.toLowerCase()}, r/solana, r/ethereum, r/bitcoin, r/defi, r/CryptoCurrency who have linked personal sites or emails`),
-          `Find ${primaryEcosystem} believers with PUBLIC emails from Reddit profiles (check linked personal sites in profile), focusing on top contributors in ${primaryEcosystem} subreddits. Profile: ${parts}. Return JSON array only, max 10.`,
+          systemPrompt(`Bitcointalk members, Ethereum Magicians participants, and Commonwealth DAO voters who discuss personal holdings and have emails in their profile signatures`),
+          `Find forum members on Bitcointalk, Ethereum Magicians, or Commonwealth who post about personal ${primaryEcosystem} holdings, staking, or governance participation. Check profile signatures for email. Exclude project founders and VC-backed figures. Profile: ${parts}. Return JSON array only, max 10.`,
           4000,
         ),
 
-        // 6 — Farcaster + Warpcast + Lens
+        // 6 — Farcaster/Lens: small accounts with on-chain bio signals
         callClaude(
           apiKey,
-          systemPrompt(`Farcaster/Warpcast users and Lens Protocol profiles in the ${primaryEcosystem} ecosystem`),
-          `Find ${primaryEcosystem}-native people with PUBLIC emails from Farcaster profiles, Warpcast bios, and Lens Protocol author pages. Profile: ${parts}. Return JSON array only, max 10.`,
+          systemPrompt(`Farcaster/Warpcast and Lens Protocol users with small followings who show ${primaryEcosystem} holder or DeFi user signals in their bio`),
+          `Find Farcaster or Lens users with small followings whose bio mentions ${primaryEcosystem} holdings, staking, wallet addresses, or DeFi activity. Look for public email in linked profile or personal site. Exclude well-known crypto personalities. Profile: ${parts}. Return JSON array only, max 10.`,
           4000,
         ),
 
-        // 7 — Personal blogs + dev.to + Hashnode
+        // 7 — Personal blogs / dev.to / Hashnode: crypto journey writers
         callClaude(
           apiKey,
-          systemPrompt(`Personal crypto blogs, dev.to crypto writers, and Hashnode blockchain developers focused on ${primaryEcosystem}`),
-          `Find ${primaryEcosystem} ecosystem developers and writers with PUBLIC emails on their personal blogs, dev.to profiles, and Hashnode author pages. Profile: ${parts}. Return JSON array only, max 10.`,
+          systemPrompt(`Personal blogs, dev.to posts, and Hashnode articles by everyday ${primaryEcosystem} users documenting their own DeFi experiences, staking setups, or portfolio strategies`),
+          `Find personal blog authors, dev.to writers, or Hashnode contributors who write about their own ${primaryEcosystem} DeFi experience, staking setup, or holding strategy — not tutorials for others. Must have public email on their author/contact page. Profile: ${parts}. Return JSON array only, max 10.`,
           4000,
         ),
 
-        // 8 — LinkedIn + Gitcoin grant applicants + hackathon profiles
+        // 8 — LinkedIn: non-executive professionals who hold crypto
         callClaude(
           apiKey,
-          systemPrompt(`LinkedIn crypto professionals in the ${primaryEcosystem} space with public contact info, and Gitcoin grant applicants or hackathon participants`),
-          `Find ${primaryEcosystem}-native professionals with PUBLIC emails from LinkedIn profiles with visible contact, Gitcoin grant pages, and crypto hackathon participant profiles. Profile: ${parts}. Return JSON array only, max 10.`,
+          systemPrompt(`LinkedIn professionals (NOT executives or founders) whose profile mentions ${primaryEcosystem} holdings, crypto investing, or DeFi participation as a personal interest alongside their day job`),
+          `Find LinkedIn users who are NOT founders, C-suite, or VCs, but mention ${primaryEcosystem} or crypto holding/investing as a personal interest in their profile summary or activity. Must have a visible public email or contact info. Profile: ${parts}. Return JSON array only, max 10.`,
           4000,
         ),
       ]
@@ -270,30 +297,36 @@ ${PROSPECT_SCHEMA}`
         }
       }
 
-      // 1. Deduplicate by name
+      // 1. Deduplicate
       const unique = deduplicateByName(allResults)
 
-      // 2. Hard filter — email required (no email = dropped entirely)
-      const withEmail = unique.filter(
-        p => p.email && p.email.trim() !== '' && p.email.trim().toLowerCase() !== 'null',
-      )
+      // 2. Hard filter: email required + exclude obvious high-profile domains
+      const HIGH_PROFILE_DOMAINS = [
+        'ethereum.org', 'solana.com', 'bitcoin.org', 'bitcoinfoundation.org',
+        'consensys.net', 'paradigm.xyz', 'a16z.com', 'coinbase.com',
+        'binance.com', 'kraken.com', 'chainalysis.com',
+      ]
+      const withEmail = unique.filter(p => {
+        const email = (p.email ?? '').trim().toLowerCase()
+        if (!email || email === 'null') return false
+        const domain = email.split('@')[1] ?? ''
+        return !HIGH_PROFILE_DOMAINS.some(d => domain.endsWith(d))
+      })
 
-      // 3. Apply ecosystem tagging: searched ecosystem as default, AI override respected
+      // 3. Ecosystem tagging
       const tagged = withEmail.map(lead => ({
         ...lead,
         ecosystem: inferEcosystem(lead, primaryEcosystem),
       }))
 
-      // 4. Sort: priority A first, then HIGH confidence first within each tier
+      // 4. Sort: A first, HIGH confidence first within tier
       const priorityOrder: Record<string, number> = { A: 0, B: 1, C: 2 }
       const confidenceOrder: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 }
       tagged.sort((a, b) => {
         const pa = priorityOrder[a.priority] ?? 9
         const pb = priorityOrder[b.priority] ?? 9
         if (pa !== pb) return pa - pb
-        const ca = confidenceOrder[a.confidence] ?? 9
-        const cb = confidenceOrder[b.confidence] ?? 9
-        return ca - cb
+        return (confidenceOrder[a.confidence] ?? 9) - (confidenceOrder[b.confidence] ?? 9)
       })
 
       return NextResponse.json({ results: tagged })
@@ -311,9 +344,9 @@ Research strategy:
 5. Check their Twitter/X bio explicitly for email strings
 6. Check their personal website /contact page
 7. Check Substack, Mirror, or personal blog author pages
-8. Find their primary crypto ecosystem, niche, recent activity, and belief signals from public posts
+8. Find their primary crypto ecosystem, niche, recent activity, and belief signals
 
-CRITICAL: Return ONLY a raw JSON object. No text before or after. No explanation. Start with { and end with }:
+CRITICAL: Return ONLY a raw JSON object. No text before or after. Start with { and end with }:
 {
   "name": "",
   "role": "",
