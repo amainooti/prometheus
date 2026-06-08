@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Search, Loader2, UserPlus, CheckCircle, AlertTriangle,
   Mail, ExternalLink, RefreshCw, Zap, User, Globe,
-  ChevronDown, ChevronUp, MailSearch, Download, SaveAll,
+  ChevronDown, ChevronUp, MailSearch, Download, SaveAll, Tag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PRIORITY_LABELS, ACTIVITY_LABELS } from '@/types'
@@ -13,27 +13,28 @@ import { PRIORITY_LABELS, ACTIVITY_LABELS } from '@/types'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Prospect {
-  name:            string
-  role:            string | null
-  company:         string | null
-  companyWebsite:  string | null
-  linkedinUrl:     string | null
-  twitterUrl:      string | null
-  farcasterUrl:    string | null
-  redditUrl:       string | null
-  quoraUrl:        string | null
-  truthSocialUrl:  string | null
-  email:           string | null
-  emailSource:     string | null
-  cryptoNiche:     string | null
-  beliefSignal:    string | null
-  activityLevel:   string
-  tags:            string[]
-  priority:        string
-  priorityReason:  string
-  sourceFound:     string | null
-  confidence:      'HIGH' | 'MEDIUM' | 'LOW'
-  notes?:          string | null
+  name:             string
+  role:             string | null
+  company:          string | null
+  companyWebsite:   string | null
+  linkedinUrl:      string | null
+  twitterUrl:       string | null
+  farcasterUrl:     string | null
+  redditUrl:        string | null
+  quoraUrl:         string | null
+  truthSocialUrl:   string | null
+  email:            string | null
+  emailSource:      string | null
+  cryptoNiche:      string | null
+  ecosystem:        string | null
+  beliefSignal:     string | null
+  activityLevel:    string
+  tags:             string[]
+  priority:         string
+  priorityReason:   string
+  sourceFound:      string | null
+  confidence:       'HIGH' | 'MEDIUM' | 'LOW'
+  notes?:           string | null
   confidenceReason?: string
 }
 
@@ -43,6 +44,13 @@ interface DiscoveryCriteria {
   ecosystems:   string[]
   platforms:    string[]
   beliefSignal: string
+}
+
+interface SavedKeyword {
+  id:       string
+  text:     string
+  category: string
+  enabled:  boolean
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -55,6 +63,23 @@ const CONFIDENCE_COLOR = {
   MEDIUM: 'text-yellow-400',
   LOW:    'text-red-400',
 }
+
+const ECOSYSTEM_COLOR: Record<string, string> = {
+  Ethereum:  'bg-indigo-500/10 border-indigo-500/20 text-indigo-400',
+  Solana:    'bg-violet-500/10 border-violet-500/20 text-violet-400',
+  Bitcoin:   'bg-orange-500/10 border-orange-500/20 text-orange-400',
+  Base:      'bg-blue-500/10  border-blue-500/20  text-blue-400',
+  Arbitrum:  'bg-sky-500/10   border-sky-500/20   text-sky-400',
+  Optimism:  'bg-red-500/10   border-red-500/20   text-red-400',
+  Cosmos:    'bg-purple-500/10 border-purple-500/20 text-purple-400',
+  Sui:       'bg-cyan-500/10  border-cyan-500/20  text-cyan-400',
+  Aptos:     'bg-teal-500/10  border-teal-500/20  text-teal-400',
+  Polygon:   'bg-fuchsia-500/10 border-fuchsia-500/20 text-fuchsia-400',
+  Avalanche: 'bg-red-600/10  border-red-600/20   text-red-500',
+  TON:       'bg-blue-600/10  border-blue-600/20  text-blue-500',
+}
+const ecosystemBadgeClass = (eco: string) =>
+  ECOSYSTEM_COLOR[eco] ?? 'bg-secondary border-border text-muted-foreground'
 
 const NICHES     = ['DeFi', 'Bitcoin', 'RWA', 'DePIN', 'NFT', 'DAO', 'GameFi', 'SocialFi', 'AI x Crypto', 'Stablecoins', 'Payments', 'ZK / Privacy', 'Modular Blockchain']
 const ROLES      = ['Founder', 'Co-Founder', 'Investor', 'Angel Investor', 'Builder / Developer', 'Educator / Content Creator', 'Analyst / Researcher', 'Community Lead', 'DAO Contributor']
@@ -100,6 +125,73 @@ function MultiSelectPills({ label, options, selected, onToggle }: {
   )
 }
 
+// ─── SavedKeywordPills ────────────────────────────────────────────────────────
+
+function SavedKeywordPills({ keywords, activeKeywords, onToggle }: {
+  keywords:       SavedKeyword[]
+  activeKeywords: string[]
+  onToggle:       (text: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  // Show first 12 collapsed, all when expanded
+  const visible = expanded ? keywords : keywords.slice(0, 12)
+  const hasMore = keywords.length > 12
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <Tag className="w-3 h-3 text-muted-foreground" />
+        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+          Saved Keywords
+        </label>
+        {activeKeywords.length > 0 && (
+          <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-semibold">
+            {activeKeywords.length} active
+          </span>
+        )}
+        <a
+          href="/keywords"
+          className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          manage
+        </a>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {visible.map(kw => {
+          const isActive = activeKeywords.includes(kw.text)
+          return (
+            <button
+              key={kw.id}
+              type="button"
+              onClick={() => onToggle(kw.text)}
+              className={cn(
+                'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+                isActive
+                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-400'
+                  : 'bg-secondary border-border text-muted-foreground hover:text-foreground hover:border-amber-500/20'
+              )}
+            >
+              {kw.text}
+            </button>
+          )
+        })}
+
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => setExpanded(v => !v)}
+            className="px-2.5 py-1 rounded-full text-[11px] font-medium border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+          >
+            {expanded ? '− show less' : `+ ${keywords.length - 12} more`}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── ProspectCard ─────────────────────────────────────────────────────────────
 
 function ProspectCard({ prospect, index, alreadySaved, onSave }: {
@@ -136,6 +228,14 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
             <span className={cn('text-[10px] font-medium', CONFIDENCE_COLOR[prospect.confidence])}>
               {prospect.confidence} conf.
             </span>
+            {prospect.ecosystem && (
+              <span className={cn(
+                'text-[10px] font-semibold px-2 py-0.5 rounded-full border',
+                ecosystemBadgeClass(prospect.ecosystem)
+              )}>
+                {prospect.ecosystem}
+              </span>
+            )}
           </div>
           {(prospect.role || prospect.company) && (
             <p className="text-xs text-muted-foreground truncate">
@@ -276,12 +376,61 @@ export function ResearchPanel() {
   const [savingAll,     setSavingAll]     = useState(false)
   const [saveAllResult, setSaveAllResult] = useState<{ created: number; skipped: number } | null>(null)
 
+  // Saved keywords state
+  const [savedKeywords,   setSavedKeywords]   = useState<SavedKeyword[]>([])
+  const [activeKeywords,  setActiveKeywords]  = useState<string[]>([])
+  const [keywordsLoading, setKeywordsLoading] = useState(false)
+
   // Lookup state
   const [lookupQuery,  setLookupQuery]  = useState('')
   const [lookupResult, setLookupResult] = useState<Prospect | null>(null)
   const [looking,      setLooking]      = useState(false)
   const [lookupError,  setLookupError]  = useState('')
   const [lookupSaved,  setLookupSaved]  = useState(false)
+
+  // ── Fetch enabled keywords on mount ──────────────────────────────────────
+  useEffect(() => {
+    const load = async () => {
+      setKeywordsLoading(true)
+      try {
+        const res  = await fetch('/api/keywords?enabled=true')
+        const data = await res.json()
+        const list: SavedKeyword[] = Array.isArray(data)
+          ? data
+          : Array.isArray(data.keywords) ? data.keywords : []
+        setSavedKeywords(list)
+      } catch {
+        // Non-fatal — section stays hidden
+      } finally {
+        setKeywordsLoading(false)
+      }
+    }
+    load()
+  }, [])
+
+  // ── Toggle a saved keyword pill ───────────────────────────────────────────
+  // Appends keyword text to beliefSignal (comma-separated), or removes it.
+  // Preserves any freeform text the user typed that isn't a saved keyword.
+  const toggleKeyword = (text: string) => {
+    setActiveKeywords(prev => {
+      const isActive = prev.includes(text)
+      const next     = isActive ? prev.filter(k => k !== text) : [...prev, text]
+
+      setCriteria(c => {
+        // Keep hand-typed parts that aren't saved keyword texts
+        const savedTexts = new Set(savedKeywords.map(kw => kw.text))
+        const freeform   = c.beliefSignal
+          .split(',')
+          .map(s => s.trim())
+          .filter(s => s !== '' && !savedTexts.has(s))
+
+        const all = [...freeform, ...next]
+        return { ...c, beliefSignal: all.join(', ') }
+      })
+
+      return next
+    })
+  }
 
   // Multi-select toggle for array fields
   const toggle = (key: keyof Omit<DiscoveryCriteria, 'beliefSignal'>) => (value: string) =>
@@ -317,7 +466,7 @@ export function ResearchPanel() {
     finally   { setDiscovering(false) }
   }
 
-  // ── Save All ─────────────────────────────────────────────────────────────────
+  // ── Save All ──────────────────────────────────────────────────────────────
 
   const handleSaveAll = async () => {
     if (!prospects.length) return
@@ -338,6 +487,7 @@ export function ResearchPanel() {
           companyWebsite: p.companyWebsite ?? '', linkedinUrl: p.linkedinUrl ?? '',
           twitterUrl: p.twitterUrl ?? '', email: p.email ?? '',
           emailSource: p.emailSource ?? '', cryptoNiche: p.cryptoNiche ?? '',
+          ecosystem: p.ecosystem ?? '',
           beliefSignal: p.beliefSignal ?? '', activityLevel: p.activityLevel ?? 'UNKNOWN',
           tags: p.tags ?? [], priority: p.priority ?? 'C', status: 'NEW',
           sourceFound: p.sourceFound ?? undefined, notes: '',
@@ -352,15 +502,15 @@ export function ResearchPanel() {
     setSavingAll(false)
   }
 
-  // ── Export CSV ───────────────────────────────────────────────────────────────
+  // ── Export CSV ────────────────────────────────────────────────────────────
 
   const handleExportCSV = () => {
     if (!prospects.length) return
     const headers = [
       'name','role','company','companyWebsite','linkedinUrl','twitterUrl',
       'farcasterUrl','redditUrl','quoraUrl','truthSocialUrl','email','emailSource',
-      'cryptoNiche','beliefSignal','activityLevel','tags','priority','priorityReason',
-      'sourceFound','confidence',
+      'cryptoNiche','ecosystem','beliefSignal','activityLevel','tags','priority',
+      'priorityReason','sourceFound','confidence',
     ]
     const escape = (v: any) => {
       if (v === null || v === undefined) return ''
@@ -380,7 +530,7 @@ export function ResearchPanel() {
     URL.revokeObjectURL(url)
   }
 
-  // ── Lookup ──────────────────────────────────────────────────────────────────
+  // ── Lookup ────────────────────────────────────────────────────────────────
 
   const handleLookup = async () => {
     if (!lookupQuery.trim()) return
@@ -401,7 +551,7 @@ export function ResearchPanel() {
     finally   { setLooking(false) }
   }
 
-  // ── Save as lead ─────────────────────────────────────────────────────────────
+  // ── Save as lead ──────────────────────────────────────────────────────────
 
   const saveAsLead = async (p: Prospect, index?: number) => {
     const res = await fetch('/api/leads', {
@@ -412,6 +562,7 @@ export function ResearchPanel() {
         companyWebsite: p.companyWebsite ?? '', linkedinUrl: p.linkedinUrl ?? '',
         twitterUrl: p.twitterUrl ?? '', email: p.email ?? '',
         emailSource: p.emailSource ?? '', cryptoNiche: p.cryptoNiche ?? '',
+        ecosystem: p.ecosystem ?? '',
         beliefSignal: p.beliefSignal ?? '', activityLevel: p.activityLevel ?? 'UNKNOWN',
         tags: p.tags ?? [], priority: p.priority ?? 'C', status: 'NEW',
         sourceFound: p.sourceFound ?? undefined, notes: p.notes ?? '',
@@ -429,7 +580,14 @@ export function ResearchPanel() {
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Clear all ─────────────────────────────────────────────────────────────
+
+  const clearAll = () => {
+    setCriteria({ niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '' })
+    setActiveKeywords([])
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -466,43 +624,36 @@ export function ResearchPanel() {
                 <p className="text-sm font-medium">Describe the type of person you want to find</p>
               </div>
               {hasAnyCriteria && (
-                <button
-                  onClick={() => setCriteria({ niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '' })}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
+                <button onClick={clearAll} className="text-xs text-muted-foreground hover:text-foreground">
                   Clear all
                 </button>
               )}
             </div>
 
-            <MultiSelectPills
-              label="Niche — select one or more"
-              options={NICHES}
-              selected={criteria.niches}
-              onToggle={toggle('niches')}
-            />
-            <MultiSelectPills
-              label="Role — select one or more"
-              options={ROLES}
-              selected={criteria.roles}
-              onToggle={toggle('roles')}
-            />
-            <MultiSelectPills
-              label="Ecosystem — select one or more"
-              options={ECOSYSTEMS}
-              selected={criteria.ecosystems}
-              onToggle={toggle('ecosystems')}
-            />
-            <MultiSelectPills
-              label="Find on — select one or more platforms"
-              options={PLATFORMS}
-              selected={criteria.platforms}
-              onToggle={toggle('platforms')}
-            />
+            <MultiSelectPills label="Niche — select one or more"          options={NICHES}     selected={criteria.niches}     onToggle={toggle('niches')}     />
+            <MultiSelectPills label="Role — select one or more"           options={ROLES}      selected={criteria.roles}      onToggle={toggle('roles')}      />
+            <MultiSelectPills label="Ecosystem — select one or more"      options={ECOSYSTEMS} selected={criteria.ecosystems} onToggle={toggle('ecosystems')} />
+            <MultiSelectPills label="Find on — select one or more platforms" options={PLATFORMS}  selected={criteria.platforms}  onToggle={toggle('platforms')}  />
 
+            {/* ── Saved keywords ── */}
+            {keywordsLoading && (
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <Loader2 className="w-3 h-3 animate-spin" /> Loading saved keywords…
+              </div>
+            )}
+            {!keywordsLoading && savedKeywords.length > 0 && (
+              <SavedKeywordPills
+                keywords={savedKeywords}
+                activeKeywords={activeKeywords}
+                onToggle={toggleKeyword}
+              />
+            )}
+
+            {/* Belief / Signal text field */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-                Belief / Signal Keyword <span className="normal-case font-normal">(optional)</span>
+                Belief / Signal Keyword{' '}
+                <span className="normal-case font-normal">(optional — type freely or pick from Saved Keywords above)</span>
               </label>
               <input
                 type="text"
@@ -511,6 +662,11 @@ export function ResearchPanel() {
                 placeholder="e.g. financial sovereignty, building on-chain, DeFi summer…"
                 className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
               />
+              {activeKeywords.length > 0 && (
+                <p className="text-[10px] text-amber-400/70">
+                  {activeKeywords.length} saved keyword{activeKeywords.length !== 1 ? 's' : ''} active
+                </p>
+              )}
             </div>
 
             <button
@@ -545,7 +701,6 @@ export function ResearchPanel() {
 
           {prospects.length > 0 && !discovering && (
             <div className="space-y-3">
-              {/* Results action bar */}
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-sm font-semibold">
                   {prospects.length} prospect{prospects.length !== 1 ? 's' : ''} found
@@ -648,10 +803,7 @@ export function ResearchPanel() {
           )}
 
           {lookupResult && !looking && (
-            <ProspectCard
-              prospect={lookupResult}
-              onSave={saveAsLead}
-            />
+            <ProspectCard prospect={lookupResult} onSave={saveAsLead} />
           )}
         </div>
       )}
