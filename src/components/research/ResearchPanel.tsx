@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronUp, MailSearch, Download, SaveAll, Tag, Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { PRIORITY_LABELS, ACTIVITY_LABELS } from '@/types'
+import { PRIORITY_LABELS } from '@/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,14 +78,13 @@ const ECOSYSTEM_COLOR: Record<string, string> = {
   TON:       'bg-blue-600/10  border-blue-600/20  text-blue-500',
 }
 const ecosystemBadgeClass = (eco: string) =>
-  ECOSYSTEM_COLOR[eco] ?? 'bg-secondary border-border text-muted-foreground'
+  ECOSYSTEM_COLOR[eco] ?? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
 
-const NICHES     = ['DeFi', 'Bitcoin', 'RWA', 'DePIN', 'NFT', 'DAO', 'GameFi', 'SocialFi', 'AI x Crypto', 'Stablecoins', 'Payments', 'ZK / Privacy', 'Modular Blockchain']
-const ROLES      = ['Founder', 'Co-Founder', 'Investor', 'Angel Investor', 'Builder / Developer', 'Educator / Content Creator', 'Analyst / Researcher', 'Community Lead', 'DAO Contributor']
-const ECOSYSTEMS = ['Ethereum', 'Solana', 'Bitcoin', 'Base', 'Arbitrum', 'Optimism', 'Cosmos', 'Sui', 'Aptos', 'Polygon', 'Avalanche', 'TON']
-const PLATFORMS  = ['X / Twitter', 'LinkedIn', 'Farcaster', 'Substack', 'GitHub', 'Mirror', 'Podcast', 'Reddit', 'Quora', 'Truth Social']
+const NICHES           = ['DeFi', 'Bitcoin', 'RWA', 'DePIN', 'NFT', 'DAO', 'GameFi', 'SocialFi', 'AI x Crypto', 'Stablecoins', 'Payments', 'ZK / Privacy', 'Modular Blockchain']
+const ROLES            = ['Founder', 'Co-Founder', 'Investor', 'Angel Investor', 'Builder / Developer', 'Educator / Content Creator', 'Analyst / Researcher', 'Community Lead', 'DAO Contributor']
+const PRESET_ECOSYSTEMS = ['Ethereum', 'Solana', 'Bitcoin', 'Base', 'Arbitrum', 'Optimism', 'Cosmos', 'Sui', 'Aptos', 'Polygon', 'Avalanche', 'TON']
+const PLATFORMS        = ['X / Twitter', 'LinkedIn', 'Farcaster', 'Substack', 'GitHub', 'Mirror', 'Podcast', 'Reddit', 'Quora', 'Truth Social']
 
-// Suggested ecosystem Twitter accounts to scrape
 const ECOSYSTEM_ACCOUNTS: Record<string, string[]> = {
   Ethereum:  ['ethereum', 'ethfoundation', 'VitalikButerin'],
   Solana:    ['solana', 'solana_foundation', 'JupiterExchange'],
@@ -130,14 +129,103 @@ function MultiSelectPills({ label, options, selected, onToggle }: {
   )
 }
 
+// ─── EcosystemInput ───────────────────────────────────────────────────────────
+// Preset pills + free-text for any custom ecosystem (memes, new chains, etc.)
+// mode='multi'  → used in Discover (multiple ecosystems)
+// mode='single' → used in Follower scraper (one ecosystem tag)
+
+function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange, mode = 'multi' }: {
+  label:          string
+  selected:       string[]
+  onToggle:       (v: string) => void
+  singleValue?:   string
+  onSingleChange?: (v: string) => void
+  mode?:          'multi' | 'single'
+}) {
+  const [draft, setDraft] = useState('')
+
+  const commit = (val: string) => {
+    const trimmed = val.trim()
+    if (!trimmed) return
+    if (mode === 'multi') onToggle(trimmed)
+    else onSingleChange?.(trimmed)
+    setDraft('')
+  }
+
+  // Custom ecosystems = anything selected that isn't in the preset list
+  const customSelected = mode === 'multi'
+    ? selected.filter(s => !PRESET_ECOSYSTEMS.includes(s))
+    : (singleValue && !PRESET_ECOSYSTEMS.includes(singleValue) ? [singleValue] : [])
+
+  const activeCount = mode === 'multi' ? selected.length : (singleValue ? 1 : 0)
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
+        {activeCount > 0 && (
+          <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-semibold">
+            {mode === 'multi' ? `${activeCount} selected` : singleValue}
+          </span>
+        )}
+      </div>
+
+      {/* Preset pills */}
+      <div className="flex flex-wrap gap-1.5">
+        {PRESET_ECOSYSTEMS.map(eco => {
+          const isActive = mode === 'multi' ? selected.includes(eco) : singleValue === eco
+          return (
+            <button key={eco} type="button"
+              onClick={() => mode === 'multi' ? onToggle(eco) : onSingleChange?.(isActive ? '' : eco)}
+              className={cn('px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+                isActive
+                  ? 'bg-primary/10 border-primary/40 text-primary'
+                  : 'bg-secondary border-border text-muted-foreground hover:text-foreground hover:border-primary/20'
+              )}>
+              {eco}
+            </button>
+          )
+        })}
+
+        {/* Custom ecosystem tags — shown as amber removable pills */}
+        {customSelected.map(eco => (
+          <button key={eco} type="button"
+            onClick={() => mode === 'multi' ? onToggle(eco) : onSingleChange?.('')}
+            className="px-2.5 py-1 rounded-full text-[11px] font-medium border bg-amber-500/10 border-amber-500/40 text-amber-400 hover:bg-amber-500/20 transition-colors">
+            {eco} ×
+          </button>
+        ))}
+      </div>
+
+      {/* Free-text input for custom ecosystems */}
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(draft) } }}
+          placeholder="Type any ecosystem & press Enter — e.g. worldlibertyfi, PEPE, BRETT, HypeEVM…"
+          className="flex-1 bg-secondary border border-border rounded-md px-3 py-1.5 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
+        />
+        {draft.trim() && (
+          <button type="button" onClick={() => commit(draft)}
+            className="shrink-0 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary rounded-md text-xs font-medium hover:bg-primary/20 transition-colors">
+            Add ↵
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── SavedKeywordPills ────────────────────────────────────────────────────────
 
 function SavedKeywordPills({ keywords, activeKeywords, onToggle }: {
   keywords: SavedKeyword[]; activeKeywords: string[]; onToggle: (text: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const visible  = expanded ? keywords : keywords.slice(0, 12)
-  const hasMore  = keywords.length > 12
+  const visible = expanded ? keywords : keywords.slice(0, 12)
+  const hasMore = keywords.length > 12
 
   return (
     <div className="space-y-1.5">
@@ -286,7 +374,6 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
 }
 
 // ─── ProspectResultsBlock ─────────────────────────────────────────────────────
-// Reusable results list with Export CSV + Save All buttons
 
 function ProspectResultsBlock({ prospects, savedIndexes, savingAll, saveAllResult, onSaveAll, onExportCSV, onSaveOne, onResearch, researchLabel }: {
   prospects:     Prospect[]
@@ -348,42 +435,40 @@ export function ResearchPanel() {
   const router = useRouter()
   const [tab, setTab] = useState<'discover' | 'lookup'>('discover')
 
-  // ── Discover state ────────────────────────────────────────────────────────
-  const [criteria, setCriteria] = useState<DiscoveryCriteria>({
-    niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '',
-  })
-  const [prospects,      setProspects]      = useState<Prospect[]>([])
-  const [discovering,    setDiscovering]    = useState(false)
-  const [discoverError,  setDiscoverError]  = useState('')
-  const [savedIndexes,   setSavedIndexes]   = useState<Set<number>>(new Set())
-  const [savingAll,      setSavingAll]      = useState(false)
-  const [saveAllResult,  setSaveAllResult]  = useState<{ created: number; skipped: number } | null>(null)
+  // Discover state
+  const [criteria, setCriteria] = useState<DiscoveryCriteria>({ niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '' })
+  const [prospects,     setProspects]     = useState<Prospect[]>([])
+  const [discovering,   setDiscovering]   = useState(false)
+  const [discoverError, setDiscoverError] = useState('')
+  const [savedIndexes,  setSavedIndexes]  = useState<Set<number>>(new Set())
+  const [savingAll,     setSavingAll]     = useState(false)
+  const [saveAllResult, setSaveAllResult] = useState<{ created: number; skipped: number } | null>(null)
 
-  // ── Saved keywords state ──────────────────────────────────────────────────
+  // Saved keywords state
   const [savedKeywords,   setSavedKeywords]   = useState<SavedKeyword[]>([])
   const [activeKeywords,  setActiveKeywords]  = useState<string[]>([])
   const [keywordsLoading, setKeywordsLoading] = useState(false)
 
-  // ── Lookup state ──────────────────────────────────────────────────────────
+  // Lookup state
   const [lookupQuery,  setLookupQuery]  = useState('')
   const [lookupResult, setLookupResult] = useState<Prospect | null>(null)
   const [looking,      setLooking]      = useState(false)
   const [lookupError,  setLookupError]  = useState('')
   const [lookupSaved,  setLookupSaved]  = useState(false)
 
-  // ── Follower scraper state ────────────────────────────────────────────────
-  const [followerUsername,    setFollowerUsername]    = useState('')
-  const [followerEcosystem,   setFollowerEcosystem]   = useState('Solana')
-  const [followerMaxCount,    setFollowerMaxCount]    = useState(200)
-  const [followerProspects,   setFollowerProspects]   = useState<Prospect[]>([])
-  const [followerScraping,    setFollowerScraping]    = useState(false)
-  const [followerError,       setFollowerError]       = useState('')
-  const [followerSavedIdx,    setFollowerSavedIdx]    = useState<Set<number>>(new Set())
-  const [followerSavingAll,   setFollowerSavingAll]   = useState(false)
-  const [followerSaveResult,  setFollowerSaveResult]  = useState<{ created: number; skipped: number } | null>(null)
-  const [followerMeta,        setFollowerMeta]        = useState<any>(null)
+  // Follower scraper state
+  const [followerUsername,   setFollowerUsername]   = useState('')
+  const [followerEcosystem,  setFollowerEcosystem]  = useState('Solana')
+  const [followerMaxCount,   setFollowerMaxCount]   = useState(200)
+  const [followerProspects,  setFollowerProspects]  = useState<Prospect[]>([])
+  const [followerScraping,   setFollowerScraping]   = useState(false)
+  const [followerError,      setFollowerError]      = useState('')
+  const [followerSavedIdx,   setFollowerSavedIdx]   = useState<Set<number>>(new Set())
+  const [followerSavingAll,  setFollowerSavingAll]  = useState(false)
+  const [followerSaveResult, setFollowerSaveResult] = useState<{ created: number; skipped: number } | null>(null)
+  const [followerMeta,       setFollowerMeta]       = useState<any>(null)
 
-  // ── Fetch enabled keywords on mount ──────────────────────────────────────
+  // Fetch enabled keywords on mount
   useEffect(() => {
     const load = async () => {
       setKeywordsLoading(true)
@@ -396,7 +481,7 @@ export function ResearchPanel() {
     load()
   }, [])
 
-  // ── Keyword toggle ────────────────────────────────────────────────────────
+  // Keyword toggle — appends to beliefSignal
   const toggleKeyword = (text: string) => {
     setActiveKeywords(prev => {
       const isActive = prev.includes(text)
@@ -421,7 +506,31 @@ export function ResearchPanel() {
     criteria.ecosystems.length > 0 || criteria.platforms.length > 0 ||
     criteria.beliefSignal.trim() !== ''
 
-  // ── Discover ──────────────────────────────────────────────────────────────
+  // Shared: prospect → lead payload
+  const prospectToLead = (p: Prospect) => ({
+    name: p.name, role: p.role ?? '', company: p.company ?? '',
+    companyWebsite: p.companyWebsite ?? '', linkedinUrl: p.linkedinUrl ?? '',
+    twitterUrl: p.twitterUrl ?? '', email: p.email ?? '',
+    emailSource: p.emailSource ?? '', cryptoNiche: p.cryptoNiche ?? '',
+    ecosystem: p.ecosystem ?? '', beliefSignal: p.beliefSignal ?? '',
+    activityLevel: p.activityLevel ?? 'UNKNOWN', tags: p.tags ?? [],
+    priority: p.priority ?? 'C', status: 'NEW',
+    sourceFound: p.sourceFound ?? undefined, notes: p.notes ?? '',
+    emailVerified: false, emailType: 'UNKNOWN',
+  })
+
+  // Shared: export CSV
+  const exportCSV = (list: Prospect[], filename: string) => {
+    const headers = ['name','role','company','companyWebsite','linkedinUrl','twitterUrl','farcasterUrl','redditUrl','quoraUrl','truthSocialUrl','email','emailSource','cryptoNiche','ecosystem','beliefSignal','activityLevel','tags','priority','priorityReason','sourceFound','confidence']
+    const escape  = (v: any) => { if (v == null) return ''; const s = Array.isArray(v) ? v.join('; ') : String(v); return `"${s.replace(/"/g, '""')}"` }
+    const rows    = [headers.join(','), ...list.map(p => headers.map(h => escape((p as any)[h])).join(','))]
+    const blob    = new Blob([rows.join('\n')], { type: 'text/csv' })
+    const url     = URL.createObjectURL(blob)
+    const a       = document.createElement('a'); a.href = url; a.download = filename; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Discover
   const handleDiscover = async () => {
     if (!hasAnyCriteria) return
     setDiscovering(true); setDiscoverError(''); setProspects([])
@@ -435,7 +544,6 @@ export function ResearchPanel() {
     finally   { setDiscovering(false) }
   }
 
-  // ── Save all (discover) ───────────────────────────────────────────────────
   const handleSaveAll = async () => {
     if (!prospects.length) return
     setSavingAll(true); setSaveAllResult(null)
@@ -449,31 +557,6 @@ export function ResearchPanel() {
     setSavedIndexes(newSaved); setSaveAllResult({ created, skipped }); setSavingAll(false)
   }
 
-  // ── Export CSV helper ─────────────────────────────────────────────────────
-  const exportCSV = (list: Prospect[], filename: string) => {
-    const headers = ['name','role','company','companyWebsite','linkedinUrl','twitterUrl','farcasterUrl','redditUrl','quoraUrl','truthSocialUrl','email','emailSource','cryptoNiche','ecosystem','beliefSignal','activityLevel','tags','priority','priorityReason','sourceFound','confidence']
-    const escape  = (v: any) => { if (v == null) return ''; const s = Array.isArray(v) ? v.join('; ') : String(v); return `"${s.replace(/"/g, '""')}"` }
-    const rows    = [headers.join(','), ...list.map(p => headers.map(h => escape((p as any)[h])).join(','))]
-    const blob    = new Blob([rows.join('\n')], { type: 'text/csv' })
-    const url     = URL.createObjectURL(blob)
-    const a       = document.createElement('a'); a.href = url; a.download = filename; a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  // ── Prospect → lead payload ───────────────────────────────────────────────
-  const prospectToLead = (p: Prospect) => ({
-    name: p.name, role: p.role ?? '', company: p.company ?? '',
-    companyWebsite: p.companyWebsite ?? '', linkedinUrl: p.linkedinUrl ?? '',
-    twitterUrl: p.twitterUrl ?? '', email: p.email ?? '',
-    emailSource: p.emailSource ?? '', cryptoNiche: p.cryptoNiche ?? '',
-    ecosystem: p.ecosystem ?? '', beliefSignal: p.beliefSignal ?? '',
-    activityLevel: p.activityLevel ?? 'UNKNOWN', tags: p.tags ?? [],
-    priority: p.priority ?? 'C', status: 'NEW',
-    sourceFound: p.sourceFound ?? undefined, notes: p.notes ?? '',
-    emailVerified: false, emailType: 'UNKNOWN',
-  })
-
-  // ── Save single lead ──────────────────────────────────────────────────────
   const saveAsLead = async (p: Prospect, index?: number) => {
     const res = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(prospectToLead(p)) })
     if (res.ok) {
@@ -483,7 +566,7 @@ export function ResearchPanel() {
     }
   }
 
-  // ── Lookup ────────────────────────────────────────────────────────────────
+  // Lookup
   const handleLookup = async () => {
     if (!lookupQuery.trim()) return
     setLooking(true); setLookupError(''); setLookupResult(null); setLookupSaved(false)
@@ -496,20 +579,15 @@ export function ResearchPanel() {
     finally   { setLooking(false) }
   }
 
-  // ── Follower scrape ───────────────────────────────────────────────────────
+  // Follower scrape
   const handleFollowerScrape = async () => {
     if (!followerUsername.trim()) return
     setFollowerScraping(true); setFollowerError(''); setFollowerProspects([])
     setFollowerSavedIdx(new Set()); setFollowerSaveResult(null); setFollowerMeta(null)
     try {
       const res  = await fetch('/api/scrape/followers', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          username:     followerUsername.replace('@', '').trim(),
-          ecosystem:    followerEcosystem,
-          maxFollowers: followerMaxCount,
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: followerUsername.replace('@', '').trim(), ecosystem: followerEcosystem, maxFollowers: followerMaxCount }),
       })
       const data = await res.json()
       if (!res.ok || data.error) { setFollowerError(data.error ?? 'Scrape failed'); return }
@@ -519,7 +597,6 @@ export function ResearchPanel() {
     finally   { setFollowerScraping(false) }
   }
 
-  // ── Follower save all ─────────────────────────────────────────────────────
   const handleFollowerSaveAll = async () => {
     if (!followerProspects.length) return
     setFollowerSavingAll(true); setFollowerSaveResult(null)
@@ -548,8 +625,8 @@ export function ResearchPanel() {
       {/* Tabs */}
       <div className="flex gap-1 bg-secondary/50 border border-border rounded-lg p-1 w-fit">
         {([
-          { id: 'discover', label: 'Discover Prospects', icon: Search },
-          { id: 'lookup',   label: 'Look Up / Followers', icon: User  },
+          { id: 'discover', label: 'Discover Prospects',  icon: Search },
+          { id: 'lookup',   label: 'Look Up / Followers', icon: User   },
         ] as const).map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setTab(id)}
             className={cn('flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
@@ -571,12 +648,25 @@ export function ResearchPanel() {
               </div>
               {hasAnyCriteria && <button onClick={clearAll} className="text-xs text-muted-foreground hover:text-foreground">Clear all</button>}
             </div>
-            <MultiSelectPills label="Niche — select one or more"             options={NICHES}     selected={criteria.niches}     onToggle={toggle('niches')}     />
-            <MultiSelectPills label="Role — select one or more"              options={ROLES}      selected={criteria.roles}      onToggle={toggle('roles')}      />
-            <MultiSelectPills label="Ecosystem — select one or more"         options={ECOSYSTEMS} selected={criteria.ecosystems} onToggle={toggle('ecosystems')} />
-            <MultiSelectPills label="Find on — select one or more platforms" options={PLATFORMS}  selected={criteria.platforms}  onToggle={toggle('platforms')}  />
 
-            {keywordsLoading && <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" /> Loading saved keywords…</div>}
+            <MultiSelectPills label="Niche — select one or more"             options={NICHES}    selected={criteria.niches}    onToggle={toggle('niches')}    />
+            <MultiSelectPills label="Role — select one or more"              options={ROLES}     selected={criteria.roles}     onToggle={toggle('roles')}     />
+
+            {/* Ecosystem — preset pills + free text */}
+            <EcosystemInput
+              label="Ecosystem — select or type any"
+              selected={criteria.ecosystems}
+              onToggle={toggle('ecosystems')}
+              mode="multi"
+            />
+
+            <MultiSelectPills label="Find on — select one or more platforms" options={PLATFORMS} selected={criteria.platforms} onToggle={toggle('platforms')} />
+
+            {keywordsLoading && (
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <Loader2 className="w-3 h-3 animate-spin" /> Loading saved keywords…
+              </div>
+            )}
             {!keywordsLoading && savedKeywords.length > 0 && (
               <SavedKeywordPills keywords={savedKeywords} activeKeywords={activeKeywords} onToggle={toggleKeyword} />
             )}
@@ -589,7 +679,9 @@ export function ResearchPanel() {
                 onChange={e => setCriteria(prev => ({ ...prev, beliefSignal: e.target.value }))}
                 placeholder="e.g. financial sovereignty, building on-chain, DeFi summer…"
                 className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
-              {activeKeywords.length > 0 && <p className="text-[10px] text-amber-400/70">{activeKeywords.length} saved keyword{activeKeywords.length !== 1 ? 's' : ''} active</p>}
+              {activeKeywords.length > 0 && (
+                <p className="text-[10px] text-amber-400/70">{activeKeywords.length} saved keyword{activeKeywords.length !== 1 ? 's' : ''} active</p>
+              )}
             </div>
 
             <button onClick={handleDiscover} disabled={discovering || !hasAnyCriteria}
@@ -610,7 +702,9 @@ export function ResearchPanel() {
               <Loader2 className="w-6 h-6 animate-spin text-primary" />
               <div className="text-center">
                 <p className="text-sm font-medium">Searching across the web…</p>
-                <p className="text-xs text-muted-foreground mt-1">Scanning {criteria.platforms.length > 0 ? criteria.platforms.join(', ') : 'X, Reddit, forums, and more'} — hunting for public emails</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Scanning {criteria.platforms.length > 0 ? criteria.platforms.join(', ') : 'X, Reddit, forums, and more'} — hunting for public emails
+                </p>
               </div>
             </div>
           )}
@@ -618,7 +712,8 @@ export function ResearchPanel() {
           {prospects.length > 0 && !discovering && (
             <ProspectResultsBlock
               prospects={prospects} savedIndexes={savedIndexes} savingAll={savingAll} saveAllResult={saveAllResult}
-              onSaveAll={handleSaveAll} onExportCSV={() => exportCSV(prospects, `prospects-${new Date().toISOString().slice(0,10)}.csv`)}
+              onSaveAll={handleSaveAll}
+              onExportCSV={() => exportCSV(prospects, `prospects-${new Date().toISOString().slice(0,10)}.csv`)}
               onSaveOne={saveAsLead} onResearch={handleDiscover} researchLabel="Search again"
             />
           )}
@@ -629,7 +724,7 @@ export function ResearchPanel() {
       {tab === 'lookup' && (
         <div className="space-y-6">
 
-          {/* ── Look Up a Person ── */}
+          {/* Look Up a Person */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <User className="w-4 h-4 text-primary" />
@@ -666,10 +761,9 @@ export function ResearchPanel() {
             {lookupResult && !looking && <ProspectCard prospect={lookupResult} onSave={saveAsLead} />}
           </div>
 
-          {/* ── Divider ── */}
           <div className="border-t border-border" />
 
-          {/* ── Scrape Followers ── */}
+          {/* Scrape Followers */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-primary" />
@@ -679,24 +773,25 @@ export function ResearchPanel() {
 
             <div className="bg-card border border-border rounded-lg p-4 space-y-4">
               <p className="text-xs text-muted-foreground">
-                Enter a Twitter account (e.g. <code className="text-primary">solana_foundation</code>) — we'll paginate through their followers, scan bios and tweets for emails, and surface qualified prospects.
+                Enter a Twitter account — we'll paginate through their followers, scan bios and tweets for emails, and surface qualified prospects.
               </p>
 
               {/* Username input */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Twitter Username</label>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">@</span>
-                  <input type="text" value={followerUsername} onChange={e => setFollowerUsername(e.target.value.replace('@', ''))}
+                  <span className="text-sm text-muted-foreground shrink-0">@</span>
+                  <input type="text" value={followerUsername}
+                    onChange={e => setFollowerUsername(e.target.value.replace('@', ''))}
                     onKeyDown={e => e.key === 'Enter' && handleFollowerScrape()}
                     placeholder="solana_foundation"
                     className="flex-1 bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                     disabled={followerScraping} />
                 </div>
-                {/* Suggested accounts based on selected ecosystem */}
+                {/* Suggestions based on selected ecosystem */}
                 {ECOSYSTEM_ACCOUNTS[followerEcosystem] && (
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] text-muted-foreground">Suggestions:</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">Suggestions:</span>
                     {ECOSYSTEM_ACCOUNTS[followerEcosystem].map(acc => (
                       <button key={acc} type="button" onClick={() => setFollowerUsername(acc)}
                         className="text-[10px] px-2 py-0.5 rounded-full bg-secondary border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors">
@@ -707,25 +802,26 @@ export function ResearchPanel() {
                 )}
               </div>
 
-              {/* Ecosystem + max followers row */}
-              <div className="flex gap-3 flex-wrap">
-                <div className="space-y-1.5 flex-1 min-w-[140px]">
-                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Ecosystem</label>
-                  <select value={followerEcosystem} onChange={e => setFollowerEcosystem(e.target.value)}
-                    className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
-                    {ECOSYSTEMS.map(e => <option key={e} value={e}>{e}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1.5 flex-1 min-w-[140px]">
-                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Max Followers to Scan</label>
-                  <select value={followerMaxCount} onChange={e => setFollowerMaxCount(Number(e.target.value))}
-                    className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
-                    <option value={100}>100 followers</option>
-                    <option value={200}>200 followers</option>
-                    <option value={500}>500 followers</option>
-                    <option value={1000}>1,000 followers</option>
-                  </select>
-                </div>
+              {/* Ecosystem — free text for follower scraper */}
+              <EcosystemInput
+                label="Ecosystem tag for results"
+                selected={[]}
+                onToggle={() => {}}
+                singleValue={followerEcosystem}
+                onSingleChange={v => setFollowerEcosystem(v || 'Crypto')}
+                mode="single"
+              />
+
+              {/* Max followers */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Max Followers to Scan</label>
+                <select value={followerMaxCount} onChange={e => setFollowerMaxCount(Number(e.target.value))}
+                  className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
+                  <option value={100}>100 followers</option>
+                  <option value={200}>200 followers</option>
+                  <option value={500}>500 followers</option>
+                  <option value={1000}>1,000 followers</option>
+                </select>
               </div>
 
               <button onClick={handleFollowerScrape} disabled={followerScraping || !followerUsername.trim()}

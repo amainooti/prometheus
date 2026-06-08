@@ -1,9 +1,4 @@
 // src/app/api/scrape/followers/route.ts
-// Scrapes followers of a given Twitter account.
-// For each follower: scans bio + recent tweets for emails.
-// Runs Claude analysis to score and filter results.
-//
-// Requires: TWITTER_API_KEY in .env
 
 import { NextRequest, NextResponse } from 'next/server'
 import { firstEmail, extractEmails, isHighProfile, sleep } from '@/lib/scrapperUtils'
@@ -22,7 +17,10 @@ interface TwitterUser {
   followers_count: number
   following_count: number
   profile_bio?:    { description: string; entities?: any }
-  entities?:       { url?: { urls?: Array<{ expanded_url: string }> } }
+  entities?:       {
+    url?:         { urls?: Array<{ expanded_url: string }> }
+    description?: { urls?: Array<{ expanded_url: string }> }
+  }
 }
 
 interface RawFollowerProfile {
@@ -36,20 +34,17 @@ interface RawFollowerProfile {
   emailSource: string | null
   twitterUrl:  string
   followers:   number
-  tweetEmails: string[]  // emails found in their tweet content
+  tweetEmails: string[]
 }
 
-// ── Twitter API fetch helper ──────────────────────────────────────────────────
+// ── Twitter API fetch ─────────────────────────────────────────────────────────
 
 async function twitterFetch(path: string, apiKey: string): Promise<any> {
   const res = await fetch(`${TWITTER_API_BASE}${path}`, {
     headers: { 'x-api-key': apiKey },
   })
   if (res.status === 429) throw new Error('Twitter API rate limited')
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Twitter API ${res.status}: ${text.slice(0, 200)}`)
-  }
+  if (!res.ok) throw new Error(`Twitter API ${res.status}`)
   return res.json()
 }
 
@@ -62,12 +57,7 @@ async function getFollowersPage(
 ): Promise<{ users: TwitterUser[]; hasNextPage: boolean; nextCursor: string | null }> {
   const params = new URLSearchParams({ userName: username, count: '100' })
   if (cursor) params.set('cursor', cursor)
-
-  const data = await twitterFetch(
-    `/twitter/user/followers?${params}`,
-    apiKey,
-  )
-
+  const data = await twitterFetch(`/twitter/user/followers?${params}`, apiKey)
   return {
     users:       data.followers ?? data.users ?? [],
     hasNextPage: data.has_next_page ?? false,
@@ -75,69 +65,110 @@ async function getFollowersPage(
   }
 }
 
-// ── Get recent tweets for a user and extract emails ───────────────────────────
+// ── Resolve expanded URL from user entities ───────────────────────────────────
+
+function resolveUrl(user: TwitterUser): string | null {
+  // Profile URL (url field expanded via entities)
+  const urlEntries = user.entities?.url?.urls ?? []
+  if (urlEntries.length > 0) return urlEntries[0].expanded_url ?? null
+  // Description expanded URLs
+  const descEntries = user.entities?.description?.urls ?? []
+  if (descEntries.length > 0) return descEntries[0].expanded_url ?? null
+  // Raw url field — only if not a t.co shortlink
+  if (user.url && !user.url.includes('t.co')) return user.url
+  return null
+}
+
+// ── Scan bio text for all signals ────────────────────────────────────────────
+
+function getBioText(user: TwitterUser): string {
+  return [
+    user.description ?? '',
+    user.profile_bio?.description ?? '',
+  ].join(' ').trim()
+}
+
+// ── Get emails from user's recent tweets ─────────────────────────────────────
+// Fixed: operator precedence bug in original, now fetches 50 tweets
 
 async function getEmailsFromTweets(username: string, apiKey: string): Promise<string[]> {
   try {
-    await sleep(300)
+    await sleep(400)
     const data = await twitterFetch(
-      `/twitter/user/last_tweets?userName=${username}&count=20`,
+      `/twitter/user/last_tweets?userName=${encodeURIComponent(username)}&count=50`,
       apiKey,
     )
-    const tweets: any[] = data.tweets ?? data.pin_tweet ? [data.pin_tweet, ...(data.tweets ?? [])] : []
-    const allText = tweets.map((t: any) => t.text ?? '').join(' ')
+
+    // FIX: was `data.pin_tweet ? [data.pin_tweet, ...tweets] : tweets` but
+    // operator precedence made it `data.tweets ?? (data.pin_tweet ? [...] : [])`
+    const tweets: any[] = data.tweets ?? []
+    if (data.pin_tweet) tweets.unshift(data.pin_tweet)
+
+    const allText = tweets
+      .filter(Boolean)
+      .map((t: any) => t.text ?? '')
+      .join(' ')
+
     return extractEmails(allText)
   } catch {
     return []
   }
 }
 
-// ── Resolve t.co URL to actual URL ────────────────────────────────────────────
+// ── Fetch a linked website and scan for email ─────────────────────────────────
 
-function resolveUrl(user: TwitterUser): string | null {
-  // Check entities for expanded URL
-  const urls = user.entities?.url?.urls ?? []
-  if (urls.length > 0) return urls[0].expanded_url ?? null
-  // Fall back to raw url field
-  if (user.url && !user.url.includes('t.co')) return user.url
-  return null
-}
-
-// ── Fetch website page and scan for email ─────────────────────────────────────
+const SKIP_DOMAINS = [
+  'twitter.com', 'x.com', 'instagram.com', 'facebook.com',
+  'youtube.com', 'tiktok.com', 't.me', 'telegram.me',
+  'discord.gg', 'discord.com', 'linktr.ee', 'bit.ly',
+]
 
 async function getEmailFromWebsite(url: string): Promise<string | null> {
   if (!url) return null
-  // Skip known non-email-bearing domains
-  const skipDomains = ['twitter.com', 'x.com', 'instagram.com', 'facebook.com', 'youtube.com', 'tiktok.com', 't.me']
-  if (skipDomains.some(d => url.includes(d))) return null
+  if (SKIP_DOMAINS.some(d => url.includes(d))) return null
 
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(5000),
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept':     'text/html',
+      },
+      signal: AbortSignal.timeout(6000),
     })
     if (!res.ok) return null
     const html = await res.text()
-    return firstEmail(html)
+    // Also check /contact page if nothing found on homepage
+    const email = firstEmail(html)
+    if (email) return email
+
+    // Try /contact subpage
+    try {
+      const base    = new URL(url)
+      const contact = `${base.origin}/contact`
+      const res2    = await fetch(contact, {
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' },
+        signal:  AbortSignal.timeout(4000),
+      })
+      if (res2.ok) return firstEmail(await res2.text())
+    } catch {}
+
+    return null
   } catch {
     return null
   }
 }
 
-// ── Process a single follower into a raw profile ──────────────────────────────
+// ── Process a single follower ─────────────────────────────────────────────────
 
-async function processFollower(
-  user:   TwitterUser,
-  apiKey: string,
-): Promise<RawFollowerProfile> {
-  const bio        = [user.description, user.profile_bio?.description].filter(Boolean).join(' ')
+async function processFollower(user: TwitterUser, apiKey: string): Promise<RawFollowerProfile> {
+  const bio        = getBioText(user)
   const websiteUrl = resolveUrl(user)
 
-  // 1. Email from bio
+  // Layer 1: email in bio
   let email:       string | null = firstEmail(bio)
   let emailSource: string | null = email ? 'Twitter bio' : null
 
-  // 2. Email from recent tweets
+  // Layer 2: email in recent tweets (only if no email found yet)
   const tweetEmails: string[] = []
   if (!email) {
     const fromTweets = await getEmailsFromTweets(user.screen_name, apiKey)
@@ -148,7 +179,7 @@ async function processFollower(
     }
   }
 
-  // 3. Email from linked website
+  // Layer 3: linked website (only if no email yet AND there's a real website)
   if (!email && websiteUrl) {
     const fromSite = await getEmailFromWebsite(websiteUrl)
     if (fromSite) {
@@ -172,7 +203,7 @@ async function processFollower(
   }
 }
 
-// ── Claude analysis: convert raw profiles → CRM prospects ────────────────────
+// ── Claude analysis ───────────────────────────────────────────────────────────
 
 function extractText(data: any): string {
   return (data?.content ?? [])
@@ -206,58 +237,32 @@ async function analyzeFollowers(
     const batch = profiles.slice(i, i + BATCH)
 
     const prompt = `You are analyzing real Twitter followers of a ${ecosystem} ecosystem account.
-Convert these profiles into CRM prospects. Each profile is a real person scraped from Twitter.
+Convert these into CRM prospects. Each is a real scraped person.
 
-For each profile:
-1. Use the email already found if present — do NOT change it
-2. If no email, note that in emailSource as null
-3. Infer their role from bio (holder, trader, developer, community member, etc.)
-4. Score conviction level from bio signals (staking, holding, DeFi, maxi, believer, etc.)
-5. Assign priority: A (strong signals + email), B (some signals), C (weak signals)
-6. Set confidence: HIGH if email found, MEDIUM if strong bio signals, LOW otherwise
-7. Filter out: bots, spam accounts, project promotional accounts with no real person behind them
-
-SKIP anyone who appears to be:
-- A bot or automated account
-- A token/project promotional account with no human identity
-- Someone with zero bio and zero engagement signals
+Rules:
+- Use the email already found — do NOT change or invent one
+- If no email, set email to null
+- Infer role from bio (holder, trader, developer, community member, investor, etc.)
+- Score conviction from bio signals: staking, holding, DeFi usage, maxi, believer, accumulating
+- Priority A = strong conviction signals + email found
+- Priority B = some conviction signals OR email found
+- Priority C = weak signals, include only if they seem genuinely crypto-native
+- SKIP obvious bots, token promo accounts with no human identity, empty accounts
+- confidence HIGH if email found, MEDIUM if strong bio, LOW otherwise
 
 Return ONLY a raw JSON array. No text. Start with [ end with ].
+Schema per item:
+{"name":"","role":"","company":null,"companyWebsite":null,"linkedinUrl":null,"twitterUrl":"","farcasterUrl":null,"redditUrl":null,"quoraUrl":null,"truthSocialUrl":null,"email":null,"emailSource":null,"cryptoNiche":"","ecosystem":"${ecosystem}","beliefSignal":"","activityLevel":"ACTIVE","tags":[],"priority":"B","priorityReason":"","sourceFound":"X_TWITTER","confidence":"MEDIUM"}
 
-Schema:
-[{
-  "name": "",
-  "role": "",
-  "company": null,
-  "companyWebsite": null,
-  "linkedinUrl": null,
-  "twitterUrl": "",
-  "farcasterUrl": null,
-  "redditUrl": null,
-  "quoraUrl": null,
-  "truthSocialUrl": null,
-  "email": null,
-  "emailSource": null,
-  "cryptoNiche": "",
-  "ecosystem": "${ecosystem}",
-  "beliefSignal": "",
-  "activityLevel": "ACTIVE",
-  "tags": [],
-  "priority": "B",
-  "priorityReason": "",
-  "sourceFound": "X_TWITTER",
-  "confidence": "MEDIUM"
-}]
-
-Profiles to analyze:
+Profiles:
 ${JSON.stringify(batch, null, 2)}`
 
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
+        method:  'POST',
         headers: {
           'Content-Type':      'application/json',
-          'x-api-key':         process.env.ANTHROPIC_API_KEY!,
+          'x-api-key':         apiKey,
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
@@ -268,8 +273,8 @@ ${JSON.stringify(batch, null, 2)}`
       })
 
       if (res.ok) {
-        const data  = await res.json()
-        const text  = extractText(data)
+        const data   = await res.json()
+        const text   = extractText(data)
         const parsed = parseJSON(text)
         results.push(...(Array.isArray(parsed) ? parsed : [parsed]))
       }
@@ -277,14 +282,13 @@ ${JSON.stringify(batch, null, 2)}`
       console.warn(`[followers] Claude batch ${i} failed:`, e.message)
     }
 
-    if (i + BATCH < profiles.length) await sleep(800)
+    if (i + BATCH < profiles.length) await sleep(600)
   }
 
-  // Sort: email first, then priority, then confidence
+  // Sort: email first → priority → confidence
   const pOrder = { A: 0, B: 1, C: 2 }
   const cOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 }
   return results.sort((a, b) => {
-    // Email leads first
     const ae = a.email ? 0 : 1
     const be = b.email ? 0 : 1
     if (ae !== be) return ae - be
@@ -309,9 +313,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'TWITTER_API_KEY not set in .env' }, { status: 500 })
     }
 
+    const anthropicKey = process.env.ANTHROPIC_API_KEY
+    if (!anthropicKey) {
+      return NextResponse.json({ error: 'ANTHROPIC_API_KEY not set in .env' }, { status: 500 })
+    }
+
     console.log(`[followers] Scraping followers of @${username} (max: ${maxFollowers})`)
 
-    // ── Step 1: Paginate through followers ────────────────────────────────────
+    // Step 1: Paginate followers
     const allUsers:  TwitterUser[] = []
     let cursor:      string | null  = null
     let pageCount    = 0
@@ -321,34 +330,37 @@ export async function POST(req: NextRequest) {
       try {
         const page = await getFollowersPage(username, cursor, twitterKey)
         allUsers.push(...page.users)
-        console.log(`[followers] Page ${pageCount + 1}: +${page.users.length} followers (total: ${allUsers.length})`)
-
+        console.log(`[followers] Page ${pageCount + 1}: +${page.users.length} (total: ${allUsers.length})`)
         if (!page.hasNextPage || !page.nextCursor) break
         cursor = page.nextCursor
         pageCount++
-        await sleep(600)
+        await sleep(500)
       } catch (e: any) {
-        console.warn(`[followers] Pagination stopped at page ${pageCount}:`, e.message)
+        console.warn(`[followers] Pagination stopped:`, e.message)
         break
       }
     }
 
-    console.log(`[followers] Total followers fetched: ${allUsers.length}`)
-
     if (allUsers.length === 0) {
-      return NextResponse.json({ error: `No followers found for @${username}. Check the username is correct.` }, { status: 404 })
+      return NextResponse.json(
+        { error: `No followers found for @${username}. Check the username is correct.` },
+        { status: 404 },
+      )
     }
 
-    // ── Step 2: Filter out high-profile / bots before processing ─────────────
+    // Step 2: Pre-filter
+    // Keep: has bio OR has linked URL (some real signal exists)
+    // Drop: high-profile (>10K followers or founder/CEO bio), completely empty accounts
     const candidates = allUsers.filter(u => {
       if (isHighProfile(u.description ?? '', u.followers_count)) return false
-      if (!u.description && !u.url) return false // no bio, no site — likely bot/empty
-      return true
+      const bio = getBioText(u)
+      const url = resolveUrl(u)
+      return bio.length > 5 || url !== null
     })
 
     console.log(`[followers] After pre-filter: ${candidates.length} candidates`)
 
-    // ── Step 3: Process each candidate (bio + tweets + website) ──────────────
+    // Step 3: Process each candidate concurrently in chunks of 5
     const rawProfiles: RawFollowerProfile[] = []
     const CONCURRENCY = 5
 
@@ -360,15 +372,14 @@ export async function POST(req: NextRequest) {
       for (const r of settled) {
         if (r.status === 'fulfilled') rawProfiles.push(r.value)
       }
-      await sleep(500)
+      await sleep(400)
     }
 
-    console.log(`[followers] Processed ${rawProfiles.length} profiles`)
-    console.log(`[followers] With email: ${rawProfiles.filter(p => p.email).length}`)
+    const withEmail = rawProfiles.filter(p => p.email)
+    console.log(`[followers] Processed ${rawProfiles.length} profiles, ${withEmail.length} with email`)
 
-    // ── Step 4: Claude analysis ───────────────────────────────────────────────
-    const prospects = await analyzeFollowers(rawProfiles, ecosystem, process.env.ANTHROPIC_API_KEY!)
-
+    // Step 4: Claude analysis
+    const prospects = await analyzeFollowers(rawProfiles, ecosystem, anthropicKey)
     console.log(`[followers] Final prospects: ${prospects.length}`)
 
     return NextResponse.json({
@@ -378,13 +389,16 @@ export async function POST(req: NextRequest) {
         ecosystem,
         followersScraped: allUsers.length,
         candidatesFound:  candidates.length,
-        withEmail:        rawProfiles.filter(p => p.email).length,
+        withEmail:        withEmail.length,
         finalProspects:   prospects.length,
       },
     })
 
   } catch (error: any) {
     console.error('[followers] Route error:', error)
-    return NextResponse.json({ error: error.message ?? 'Follower scrape failed' }, { status: 500 })
+    return NextResponse.json(
+      { error: error.message ?? 'Follower scrape failed' },
+      { status: 500 },
+    )
   }
 }
