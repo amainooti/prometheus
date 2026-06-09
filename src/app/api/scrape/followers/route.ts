@@ -1,7 +1,7 @@
 // src/app/api/scrape/followers/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
-import { firstEmail, extractEmails, isHighProfile, sleep, parseEcosystem } from '@/lib/scraperUtils'
+import { firstEmail, extractEmails, isHighProfile, sleep, parseEcosystem } from '@/lib/scrapperUtils'
 
 const TWITTER_API_BASE = 'https://api.twitterapi.io'
 

@@ -118,38 +118,42 @@ export const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
 }
 
 export const SOURCE_LABELS: Record<LeadSource, string> = {
-  LINKEDIN: 'LinkedIn',
-  X_TWITTER: 'X / Twitter',
-  FARCASTER: 'Farcaster',
-  LENS: 'Lens',
-  DISCORD: 'Discord',
-  TELEGRAM: 'Telegram',
-  SUBSTACK: 'Substack',
-  MIRROR: 'Mirror',
-  MEDIUM: 'Medium',
-  YOUTUBE: 'YouTube',
-  PODCAST: 'Podcast',
-  CRYPTO_EVENT: 'Crypto Event',
-  VC_PORTFOLIO: 'VC Portfolio',
-  DAO_FORUM: 'DAO Forum',
-  GITHUB: 'GitHub',
-  COMPANY_WEBSITE: 'Company Website',
+  LINKEDIN:          'LinkedIn',
+  X_TWITTER:         'X / Twitter',
+  FARCASTER:         'Farcaster',
+  LENS:              'Lens',
+  DISCORD:           'Discord',
+  TELEGRAM:          'Telegram',
+  SUBSTACK:          'Substack',
+  MIRROR:            'Mirror',
+  MEDIUM:            'Medium',
+  YOUTUBE:           'YouTube',
+  PODCAST:           'Podcast',
+  CRYPTO_EVENT:      'Crypto Event',
+  VC_PORTFOLIO:      'VC Portfolio',
+  DAO_FORUM:         'DAO Forum',
+  GITHUB:            'GitHub',
+  COMPANY_WEBSITE:   'Company Website',
   CRYPTO_NEWSLETTER: 'Crypto Newsletter',
-  OTHER: 'Other',
+  REDDIT:            'Reddit',       // ← NEW
+  BITCOINTALK:       'Bitcointalk',  // ← NEW
+  QUORA:             'Quora',        // ← NEW
+  MANUAL:            'Manual',       // ← NEW
+  OTHER:             'Other',
 }
 
 export const CATEGORY_LABELS: Record<KeywordCategory, string> = {
-  IDENTITY: 'Identity',
-  FOUNDER_INVESTOR: 'Founder / Investor',
+  IDENTITY:            'Identity',
+  FOUNDER_INVESTOR:    'Founder / Investor',
   BUILDER_CONTRIBUTOR: 'Builder / Contributor',
-  CONTENT_EDUCATION: 'Content / Education',
-  BELIEF_PHILOSOPHY: 'Belief / Philosophy',
-  RETAIL_HOLDER: 'Retail Holder',
-  ECOSYSTEM: 'Ecosystem',
-  NICHE: 'Niche',
-  ACTIVITY_SIGNAL: 'Activity Signal',
-  EMAIL_DISCOVERY: 'Email Discovery',
-  EXCLUSION: 'Exclusion',
+  CONTENT_EDUCATION:   'Content / Education',
+  BELIEF_PHILOSOPHY:   'Belief / Philosophy',
+  RETAIL_HOLDER:       'Retail Holder',
+  ECOSYSTEM:           'Ecosystem',
+  NICHE:               'Niche',
+  ACTIVITY_SIGNAL:     'Activity Signal',
+  EMAIL_DISCOVERY:     'Email Discovery',
+  EXCLUSION:           'Exclusion',
 }
 
 export const AVAILABLE_TAGS = [
