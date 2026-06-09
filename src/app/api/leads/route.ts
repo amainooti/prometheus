@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
     const verified   = searchParams.get('emailVerified')
     const activity   = searchParams.getAll('activityLevel')
     const source     = searchParams.getAll('sourceFound')
+    const ecosystem  = searchParams.get('ecosystem') ?? ''  // ← NEW
     const page       = Math.max(1, parseInt(searchParams.get('page') ?? '1'))
     const limit      = Math.min(100, parseInt(searchParams.get('limit') ?? '50'))
     const sortBy     = searchParams.get('sortBy') ?? 'createdAt'
@@ -22,11 +23,12 @@ export async function GET(req: NextRequest) {
     const where: Prisma.LeadWhereInput = {
       ...(search ? {
         OR: [
-          { name:    { contains: search, mode: 'insensitive' } },
-          { company: { contains: search, mode: 'insensitive' } },
-          { role:    { contains: search, mode: 'insensitive' } },
-          { email:   { contains: search, mode: 'insensitive' } },
+          { name:        { contains: search, mode: 'insensitive' } },
+          { company:     { contains: search, mode: 'insensitive' } },
+          { role:        { contains: search, mode: 'insensitive' } },
+          { email:       { contains: search, mode: 'insensitive' } },
           { cryptoNiche: { contains: search, mode: 'insensitive' } },
+          { ecosystem:   { contains: search, mode: 'insensitive' } }, // ← NEW
         ],
       } : {}),
       ...(priority.length   ? { priority:        { in: priority   as any[] } } : {}),
@@ -34,6 +36,7 @@ export async function GET(req: NextRequest) {
       ...(confidence.length ? { emailConfidence: { in: confidence as any[] } } : {}),
       ...(activity.length   ? { activityLevel:   { in: activity   as any[] } } : {}),
       ...(source.length     ? { sourceFound:     { in: source     as any[] } } : {}),
+      ...(ecosystem         ? { ecosystem:       { contains: ecosystem, mode: 'insensitive' } } : {}), // ← NEW
       ...(verified !== null && verified !== '' ? { emailVerified: verified === 'true' } : {}),
     }
 
@@ -65,13 +68,15 @@ export async function POST(req: NextRequest) {
 
     const data = parsed.data
 
-    // Duplicate check — same name + same company
+    // Duplicate check — same name + same email (more reliable than name+company)
     const existing = await prisma.lead.findFirst({
       where: {
-        name:    { equals: data.name,    mode: 'insensitive' },
-        company: { equals: data.company ?? '', mode: 'insensitive' },
+        name: { equals: data.name, mode: 'insensitive' },
+        ...(data.email ? { email: { equals: data.email, mode: 'insensitive' } } : {
+          company: { equals: data.company ?? '', mode: 'insensitive' },
+        }),
       },
-      select: { id: true, name: true, company: true },
+      select: { id: true, name: true, company: true, email: true },
     })
 
     if (existing) {

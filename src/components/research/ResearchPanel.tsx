@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Search, Loader2, UserPlus, CheckCircle, AlertTriangle,
   Mail, ExternalLink, RefreshCw, Zap, User, Globe,
-  ChevronDown, ChevronUp, MailSearch, Download, SaveAll, Tag, Users,
+  ChevronDown, ChevronUp, MailSearch, Download, SaveAll, Tag, Users, Plus, X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PRIORITY_LABELS } from '@/types'
@@ -375,50 +375,83 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
 
 // ─── ProspectResultsBlock ─────────────────────────────────────────────────────
 
-function ProspectResultsBlock({ prospects, savedIndexes, savingAll, saveAllResult, onSaveAll, onExportCSV, onSaveOne, onResearch, researchLabel }: {
-  prospects:     Prospect[]
-  savedIndexes:  Set<number>
-  savingAll:     boolean
-  saveAllResult: { created: number; skipped: number } | null
-  onSaveAll:     () => void
-  onExportCSV:   () => void
-  onSaveOne:     (p: Prospect, i?: number) => Promise<void>
-  onResearch?:   () => void
-  researchLabel?: string
+function ProspectResultsBlock({ prospects, savedIndexes, savingAll, saveAllResult, onSaveAll, onSaveEmailOnly, onExportCSV, onSaveOne, onResearch, researchLabel }: {
+  prospects:       Prospect[]
+  savedIndexes:    Set<number>
+  savingAll:       boolean
+  saveAllResult:   { created: number; skipped: number } | null
+  onSaveAll:       () => void
+  onSaveEmailOnly: () => void
+  onExportCSV:     () => void
+  onSaveOne:       (p: Prospect, i?: number) => Promise<void>
+  onResearch?:     () => void
+  researchLabel?:  string
 }) {
+  const withEmailCount    = prospects.filter(p => p.email).length
+  const withoutEmailCount = prospects.length - withEmailCount
+  const allEmailSaved     = prospects.filter(p => p.email).every((_, i) =>
+    savedIndexes.has(prospects.indexOf(prospects.filter(p2 => p2.email)[i]))
+  )
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+      {/* Summary bar */}
+      <div className="flex items-center gap-3 flex-wrap">
         <p className="text-sm font-semibold">
           {prospects.length} prospect{prospects.length !== 1 ? 's' : ''} found
-          {savedIndexes.size > 0 && <span className="text-xs text-muted-foreground ml-2">· {savedIndexes.size} saved</span>}
         </p>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={onExportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary border border-border rounded-md text-xs font-medium hover:bg-secondary/80">
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </button>
-          <button onClick={onSaveAll} disabled={savingAll || savedIndexes.size === prospects.length}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:bg-primary/90 disabled:opacity-50">
-            {savingAll
-              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
-              : savedIndexes.size === prospects.length
-              ? <><CheckCircle className="w-3.5 h-3.5" /> All Saved</>
-              : <><SaveAll className="w-3.5 h-3.5" /> Save All {prospects.length - savedIndexes.size} to CRM</>}
-          </button>
-          {onResearch && (
-            <button onClick={onResearch} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-              <RefreshCw className="w-3 h-3" /> {researchLabel ?? 'Search again'}
-            </button>
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="flex items-center gap-1 text-green-400 font-medium">
+            <Mail className="w-3 h-3" /> {withEmailCount} with email
+          </span>
+          {withoutEmailCount > 0 && (
+            <span className="text-muted-foreground">· {withoutEmailCount} without</span>
+          )}
+          {savedIndexes.size > 0 && (
+            <span className="text-muted-foreground">· {savedIndexes.size} saved</span>
           )}
         </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* PRIMARY: Save email-only — the one-shot button */}
+        <button
+          onClick={onSaveEmailOnly}
+          disabled={savingAll || withEmailCount === 0}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md text-xs font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
+        >
+          {savingAll
+            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
+            : <><Mail className="w-3.5 h-3.5" /> Save {withEmailCount} with Email to CRM</>}
+        </button>
+
+        {/* SECONDARY: Export CSV */}
+        <button onClick={onExportCSV}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary border border-border rounded-md text-xs font-medium hover:bg-secondary/80">
+          <Download className="w-3.5 h-3.5" /> Export CSV
+        </button>
+
+        {/* TERTIARY: Save all (including no-email) */}
+        <button onClick={onSaveAll} disabled={savingAll || savedIndexes.size === prospects.length}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary border border-border rounded-md text-xs font-medium hover:bg-secondary/80 disabled:opacity-50">
+          {savedIndexes.size === prospects.length
+            ? <><CheckCircle className="w-3.5 h-3.5 text-green-400" /> All Saved</>
+            : <><SaveAll className="w-3.5 h-3.5" /> Save All {prospects.length - savedIndexes.size}</>}
+        </button>
+
+        {onResearch && (
+          <button onClick={onResearch} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground ml-auto">
+            <RefreshCw className="w-3 h-3" /> {researchLabel ?? 'Search again'}
+          </button>
+        )}
       </div>
 
       {saveAllResult && (
         <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-lg text-xs">
           <CheckCircle className="w-3.5 h-3.5 text-green-400 shrink-0" />
           <span className="text-green-400 font-medium">{saveAllResult.created} saved to CRM</span>
-          {saveAllResult.skipped > 0 && <span className="text-muted-foreground">· {saveAllResult.skipped} skipped</span>}
+          {saveAllResult.skipped > 0 && <span className="text-muted-foreground">· {saveAllResult.skipped} skipped (duplicates)</span>}
         </div>
       )}
 
@@ -429,11 +462,105 @@ function ProspectResultsBlock({ prospects, savedIndexes, savingAll, saveAllResul
   )
 }
 
+// ─── AddManualModal ───────────────────────────────────────────────────────────
+
+function AddManualModal({ form, saving, done, onChange, onSave, onClose }: {
+  form:     { name: string; email: string; ecosystem: string; twitterUrl: string; notes: string }
+  saving:   boolean
+  done:     boolean
+  onChange: (field: string, value: string) => void
+  onSave:   () => void
+  onClose:  () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="bg-card border border-border rounded-xl w-full max-w-md shadow-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-sm font-semibold">Add Profile Manually</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Name *</label>
+            <input
+              type="text" value={form.name} onChange={e => onChange('name', e.target.value)}
+              placeholder="e.g. John Smith"
+              className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Email *</label>
+            <input
+              type="email" value={form.email} onChange={e => onChange('email', e.target.value)}
+              placeholder="e.g. john@gmail.com"
+              className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Ecosystem / Ticker</label>
+            <input
+              type="text" value={form.ecosystem} onChange={e => onChange('ecosystem', e.target.value)}
+              placeholder="e.g. Solana, $PEPE, Ethereum"
+              className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Twitter / X URL</label>
+            <input
+              type="text" value={form.twitterUrl} onChange={e => onChange('twitterUrl', e.target.value)}
+              placeholder="e.g. https://twitter.com/username"
+              className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
+            <textarea
+              value={form.notes} onChange={e => onChange('notes', e.target.value)}
+              placeholder="Any context about this person…"
+              rows={2}
+              className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
+          <button onClick={onClose} className="px-4 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={onSave}
+            disabled={saving || !form.name.trim() || !form.email.trim()}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {saving
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
+              : done
+              ? <><CheckCircle className="w-3.5 h-3.5" /> Saved!</>
+              : <><UserPlus className="w-3.5 h-3.5" /> Save to CRM</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export function ResearchPanel() {
   const router = useRouter()
   const [tab, setTab] = useState<'discover' | 'lookup'>('discover')
+  const [showManual,   setShowManual]   = useState(false)
+  const [manualSaving, setManualSaving] = useState(false)
+  const [manualDone,   setManualDone]   = useState(false)
+  const [manualForm,   setManualForm]   = useState({ name: '', email: '', ecosystem: '', twitterUrl: '', notes: '' })
 
   // Discover state
   const [criteria, setCriteria] = useState<DiscoveryCriteria>({ niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '' })
@@ -557,6 +684,21 @@ export function ResearchPanel() {
     setSavedIndexes(newSaved); setSaveAllResult({ created, skipped }); setSavingAll(false)
   }
 
+  // One-shot: save only prospects that have an email
+  const handleSaveEmailOnly = async () => {
+    if (!prospects.length) return
+    setSavingAll(true); setSaveAllResult(null)
+    let created = 0, skipped = 0
+    const newSaved = new Set(savedIndexes)
+    for (let i = 0; i < prospects.length; i++) {
+      if (!prospects[i].email) continue          // skip no-email
+      if (savedIndexes.has(i)) { skipped++; continue }
+      const res = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(prospectToLead(prospects[i])) })
+      if (res.status === 201) { created++; newSaved.add(i) } else skipped++
+    }
+    setSavedIndexes(newSaved); setSaveAllResult({ created, skipped }); setSavingAll(false)
+  }
+
   const saveAsLead = async (p: Prospect, index?: number) => {
     const res = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(prospectToLead(p)) })
     if (res.ok) {
@@ -610,6 +752,21 @@ export function ResearchPanel() {
     setFollowerSavedIdx(newSaved); setFollowerSaveResult({ created, skipped }); setFollowerSavingAll(false)
   }
 
+  // One-shot: save only follower prospects with email
+  const handleFollowerSaveEmailOnly = async () => {
+    if (!followerProspects.length) return
+    setFollowerSavingAll(true); setFollowerSaveResult(null)
+    let created = 0, skipped = 0
+    const newSaved = new Set(followerSavedIdx)
+    for (let i = 0; i < followerProspects.length; i++) {
+      if (!followerProspects[i].email) continue  // skip no-email
+      if (followerSavedIdx.has(i)) { skipped++; continue }
+      const res = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(prospectToLead(followerProspects[i])) })
+      if (res.status === 201) { created++; newSaved.add(i) } else skipped++
+    }
+    setFollowerSavedIdx(newSaved); setFollowerSaveResult({ created, skipped }); setFollowerSavingAll(false)
+  }
+
   const saveFollowerLead = async (p: Prospect, index?: number) => {
     const res = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(prospectToLead(p)) })
     if (res.ok && index !== undefined) setFollowerSavedIdx(prev => new Set([...prev, index]))
@@ -617,10 +774,57 @@ export function ResearchPanel() {
 
   const clearAll = () => { setCriteria({ niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '' }); setActiveKeywords([]) }
 
+  const handleManualSave = async () => {
+    if (!manualForm.name.trim() || !manualForm.email.trim()) return
+    setManualSaving(true)
+    try {
+      const res = await fetch('/api/leads', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          name:        manualForm.name.trim(),
+          email:       manualForm.email.trim(),
+          ecosystem:   manualForm.ecosystem.trim(),
+          twitterUrl:  manualForm.twitterUrl.trim(),
+          notes:       manualForm.notes.trim(),
+          role:        '',
+          company:     '',
+          activityLevel: 'UNKNOWN',
+          tags:        [],
+          priority:    'B',
+          status:      'NEW',
+          sourceFound: 'MANUAL',
+          emailVerified: false,
+          emailType:   'UNKNOWN',
+        }),
+      })
+      if (res.ok) {
+        setManualDone(true)
+        setTimeout(() => {
+          setShowManual(false)
+          setManualDone(false)
+          setManualForm({ name: '', email: '', ecosystem: '', twitterUrl: '', notes: '' })
+        }, 1200)
+      }
+    } finally { setManualSaving(false) }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-5 max-w-3xl">
+
+      {/* Manual add modal */}
+      {showManual && (
+        <AddManualModal
+          form={manualForm}
+          saving={manualSaving}
+          done={manualDone}
+          onChange={(field, value) => setManualForm(prev => ({ ...prev, [field]: value }))}
+          onSave={handleManualSave}
+          onClose={() => { setShowManual(false); setManualForm({ name: '', email: '', ecosystem: '', twitterUrl: '', notes: '' }) }}
+        />
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 bg-secondary/50 border border-border rounded-lg p-1 w-fit">
@@ -635,6 +839,16 @@ export function ResearchPanel() {
             <Icon className="w-3.5 h-3.5" />{label}
           </button>
         ))}
+      </div>
+
+      {/* Add profile manually */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowManual(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary border border-border rounded-md text-xs font-medium hover:bg-secondary/80 transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" /> Add Profile Manually
+        </button>
       </div>
 
       {/* ── DISCOVER TAB ── */}
@@ -713,6 +927,7 @@ export function ResearchPanel() {
             <ProspectResultsBlock
               prospects={prospects} savedIndexes={savedIndexes} savingAll={savingAll} saveAllResult={saveAllResult}
               onSaveAll={handleSaveAll}
+              onSaveEmailOnly={handleSaveEmailOnly}
               onExportCSV={() => exportCSV(prospects, `prospects-${new Date().toISOString().slice(0,10)}.csv`)}
               onSaveOne={saveAsLead} onResearch={handleDiscover} researchLabel="Search again"
             />
@@ -868,6 +1083,7 @@ export function ResearchPanel() {
               <ProspectResultsBlock
                 prospects={followerProspects} savedIndexes={followerSavedIdx} savingAll={followerSavingAll} saveAllResult={followerSaveResult}
                 onSaveAll={handleFollowerSaveAll}
+                onSaveEmailOnly={handleFollowerSaveEmailOnly}
                 onExportCSV={() => exportCSV(followerProspects, `followers-${followerUsername}-${new Date().toISOString().slice(0,10)}.csv`)}
                 onSaveOne={saveFollowerLead}
                 onResearch={handleFollowerScrape} researchLabel="Scrape again"

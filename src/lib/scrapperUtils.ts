@@ -54,7 +54,7 @@ const HIGH_PROFILE_KEYWORDS = [
 ]
 
 export function isHighProfile(bio: string, followerCount?: number): boolean {
-  if (followerCount && followerCount > 10000) return true
+  if (followerCount && followerCount > 50000) return true
   const lower = bio.toLowerCase()
   return HIGH_PROFILE_KEYWORDS.some(k => lower.includes(k))
 }

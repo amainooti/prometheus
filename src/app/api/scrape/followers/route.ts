@@ -1,7 +1,7 @@
 // src/app/api/scrape/followers/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
-import { firstEmail, extractEmails, isHighProfile, sleep, parseEcosystem } from '@/lib/scrapperUtils'
+import { firstEmail, extractEmails, isHighProfile, sleep, parseEcosystem } from '@/lib/scraperUtils'
 
 const TWITTER_API_BASE = 'https://api.twitterapi.io'
 
@@ -55,11 +55,14 @@ async function getFollowersPage(
   cursor:   string | null,
   apiKey:   string,
 ): Promise<{ users: TwitterUser[]; hasNextPage: boolean; nextCursor: string | null }> {
-  const params = new URLSearchParams({ userName: username, count: '100' })
+  const params = new URLSearchParams({ userName: username, count: '200' })
   if (cursor) params.set('cursor', cursor)
   const data = await twitterFetch(`/twitter/user/followers?${params}`, apiKey)
+  console.log('[followers] Raw API response keys:', Object.keys(data))
+  const users = data.followers ?? data.users ?? data.data ?? []
+  console.log(`[followers] Users in page: ${users.length}`)
   return {
-    users:       data.followers ?? data.users ?? [],
+    users,
     hasNextPage: data.has_next_page ?? false,
     nextCursor:  data.next_cursor ?? null,
   }
@@ -308,7 +311,7 @@ export async function POST(req: NextRequest) {
     const allUsers:  TwitterUser[] = []
     let cursor:      string | null  = null
     let pageCount    = 0
-    const maxPages   = Math.ceil(maxFollowers / 100)
+    const maxPages   = Math.ceil(maxFollowers / 200)
 
     while (pageCount < maxPages) {
       try {
@@ -332,12 +335,15 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Step 2: Pre-filter — drop high-profile and completely empty accounts
+    // Step 2: Pre-filter — only drop completely empty accounts (no bio AND no url)
+    // We don't filter by follower count here — Claude handles high-profile exclusion
+    // This is important for large accounts like cz_binance whose followers include
+    // many legitimate mid-size accounts that would be wrongly excluded by a 10K cap
     const candidates = allUsers.filter(u => {
-      if (isHighProfile(u.description ?? '', u.followers_count)) return false
       const bio = getBioText(u)
       const url = resolveUrl(u)
-      return bio.length > 5 || url !== null
+      // Keep anyone with ANY signal — bio text OR a linked URL
+      return bio.length > 3 || url !== null
     })
 
     console.log(`[followers] After pre-filter: ${candidates.length} candidates`)

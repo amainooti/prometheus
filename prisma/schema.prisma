@@ -69,6 +69,10 @@ enum LeadSource {
   GITHUB
   COMPANY_WEBSITE
   CRYPTO_NEWSLETTER
+  REDDIT
+  BITCOINTALK
+  QUORA
+  MANUAL
   OTHER
 }
 
@@ -101,9 +105,10 @@ model Lead {
 
   // Crypto profile
   cryptoNiche     String?
+  ecosystem       String?   // e.g. "Solana", "$PEPE", "Ethereum"
   beliefSignal    String?
   activityLevel   ActivityLevel @default(UNKNOWN)
-  tags            String[]  // e.g. ["Bitcoin","DeFi","Founder"]
+  tags            String[]
 
   // Email
   email           String?
@@ -131,6 +136,8 @@ model Lead {
   @@index([priority])
   @@index([emailConfidence])
   @@index([createdAt])
+  @@index([ecosystem])
+  @@index([sourceFound])
 }
 
 model EmailChecklist {
