@@ -80,10 +80,10 @@ const ECOSYSTEM_COLOR: Record<string, string> = {
 const ecosystemBadgeClass = (eco: string) =>
   ECOSYSTEM_COLOR[eco] ?? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
 
-const NICHES           = ['DeFi', 'Bitcoin', 'RWA', 'DePIN', 'NFT', 'DAO', 'GameFi', 'SocialFi', 'AI x Crypto', 'Stablecoins', 'Payments', 'ZK / Privacy', 'Modular Blockchain']
-const ROLES            = ['Founder', 'Co-Founder', 'Investor', 'Angel Investor', 'Builder / Developer', 'Educator / Content Creator', 'Analyst / Researcher', 'Community Lead', 'DAO Contributor']
+const NICHES            = ['DeFi', 'Bitcoin', 'RWA', 'DePIN', 'NFT', 'DAO', 'GameFi', 'SocialFi', 'AI x Crypto', 'Stablecoins', 'Payments', 'ZK / Privacy', 'Modular Blockchain']
+const ROLES             = ['Founder', 'Co-Founder', 'Investor', 'Angel Investor', 'Builder / Developer', 'Educator / Content Creator', 'Analyst / Researcher', 'Community Lead', 'DAO Contributor']
 const PRESET_ECOSYSTEMS = ['Ethereum', 'Solana', 'Bitcoin', 'Base', 'Arbitrum', 'Optimism', 'Cosmos', 'Sui', 'Aptos', 'Polygon', 'Avalanche', 'TON']
-const PLATFORMS        = ['X / Twitter', 'LinkedIn', 'Farcaster', 'Substack', 'GitHub', 'Mirror', 'Podcast', 'Reddit', 'Quora', 'Truth Social']
+const PLATFORMS         = ['X / Twitter', 'LinkedIn', 'Farcaster', 'Substack', 'GitHub', 'Mirror', 'Podcast', 'Reddit', 'Quora', 'Truth Social']
 
 const ECOSYSTEM_ACCOUNTS: Record<string, string[]> = {
   Ethereum:  ['ethereum', 'ethfoundation', 'VitalikButerin'],
@@ -98,6 +98,35 @@ const ECOSYSTEM_ACCOUNTS: Record<string, string[]> = {
   Polygon:   ['0xPolygon', 'PolygonDAO'],
   Avalanche: ['avalancheavax', 'AvaLabs'],
   TON:       ['ton_blockchain', 'toncoin'],
+}
+
+// ─── Follower option builder ──────────────────────────────────────────────────
+
+function buildFollowerOptions(total: number | null): { value: number; label: string }[] {
+  if (!total) {
+    // No count yet — show sensible defaults
+    return [100, 200, 500, 1000].map(v => ({ value: v, label: `${v.toLocaleString()} followers` }))
+  }
+
+  // Cap scannable range at 10k (cost / time constraint)
+  const cap   = Math.min(total, 10_000)
+  const steps = [100, 200, 500, 1000, 2000, 5000, 10_000].filter(v => v <= cap)
+
+  // Always include at least one option
+  if (steps.length === 0) steps.push(Math.min(total, 100))
+
+  // If actual count fits under 10k and isn't already a step, add an "All" option
+  if (total <= 10_000 && !steps.includes(total)) {
+    steps.push(total)
+    steps.sort((a, b) => a - b)
+  }
+
+  return steps.map(v => ({
+    value: v,
+    label: v === total && total <= 10_000
+      ? `All ${v.toLocaleString()} followers`
+      : `${v.toLocaleString()} followers`,
+  }))
 }
 
 // ─── MultiSelectPills ─────────────────────────────────────────────────────────
@@ -130,17 +159,14 @@ function MultiSelectPills({ label, options, selected, onToggle }: {
 }
 
 // ─── EcosystemInput ───────────────────────────────────────────────────────────
-// Preset pills + free-text for any custom ecosystem (memes, new chains, etc.)
-// mode='multi'  → used in Discover (multiple ecosystems)
-// mode='single' → used in Follower scraper (one ecosystem tag)
 
 function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange, mode = 'multi' }: {
-  label:          string
-  selected:       string[]
-  onToggle:       (v: string) => void
-  singleValue?:   string
+  label:           string
+  selected:        string[]
+  onToggle:        (v: string) => void
+  singleValue?:    string
   onSingleChange?: (v: string) => void
-  mode?:          'multi' | 'single'
+  mode?:           'multi' | 'single'
 }) {
   const [draft, setDraft] = useState('')
 
@@ -152,7 +178,6 @@ function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange
     setDraft('')
   }
 
-  // Custom ecosystems = anything selected that isn't in the preset list
   const customSelected = mode === 'multi'
     ? selected.filter(s => !PRESET_ECOSYSTEMS.includes(s))
     : (singleValue && !PRESET_ECOSYSTEMS.includes(singleValue) ? [singleValue] : [])
@@ -187,7 +212,7 @@ function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange
           )
         })}
 
-        {/* Custom ecosystem tags — shown as amber removable pills */}
+        {/* Custom ecosystem tags */}
         {customSelected.map(eco => (
           <button key={eco} type="button"
             onClick={() => mode === 'multi' ? onToggle(eco) : onSingleChange?.('')}
@@ -197,7 +222,7 @@ function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange
         ))}
       </div>
 
-      {/* Free-text input for custom ecosystems */}
+      {/* Free-text input */}
       <div className="flex items-center gap-2">
         <input
           type="text"
@@ -562,7 +587,7 @@ export function ResearchPanel() {
   const [manualDone,   setManualDone]   = useState(false)
   const [manualForm,   setManualForm]   = useState({ name: '', email: '', ecosystem: '', twitterUrl: '', notes: '' })
 
-  // Discover state
+  // ── Discover state ──────────────────────────────────────────────────────────
   const [criteria, setCriteria] = useState<DiscoveryCriteria>({ niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '' })
   const [prospects,     setProspects]     = useState<Prospect[]>([])
   const [discovering,   setDiscovering]   = useState(false)
@@ -571,31 +596,36 @@ export function ResearchPanel() {
   const [savingAll,     setSavingAll]     = useState(false)
   const [saveAllResult, setSaveAllResult] = useState<{ created: number; skipped: number } | null>(null)
 
-  // Saved keywords state
+  // ── Saved keywords state ────────────────────────────────────────────────────
   const [savedKeywords,   setSavedKeywords]   = useState<SavedKeyword[]>([])
   const [activeKeywords,  setActiveKeywords]  = useState<string[]>([])
   const [keywordsLoading, setKeywordsLoading] = useState(false)
 
-  // Lookup state
+  // ── Lookup state ────────────────────────────────────────────────────────────
   const [lookupQuery,  setLookupQuery]  = useState('')
   const [lookupResult, setLookupResult] = useState<Prospect | null>(null)
   const [looking,      setLooking]      = useState(false)
   const [lookupError,  setLookupError]  = useState('')
   const [lookupSaved,  setLookupSaved]  = useState(false)
 
-  // Follower scraper state
-  const [followerUsername,   setFollowerUsername]   = useState('')
-  const [followerEcosystem,  setFollowerEcosystem]  = useState('Solana')
-  const [followerMaxCount,   setFollowerMaxCount]   = useState(200)
-  const [followerProspects,  setFollowerProspects]  = useState<Prospect[]>([])
-  const [followerScraping,   setFollowerScraping]   = useState(false)
-  const [followerError,      setFollowerError]      = useState('')
-  const [followerSavedIdx,   setFollowerSavedIdx]   = useState<Set<number>>(new Set())
-  const [followerSavingAll,  setFollowerSavingAll]  = useState(false)
-  const [followerSaveResult, setFollowerSaveResult] = useState<{ created: number; skipped: number } | null>(null)
-  const [followerMeta,       setFollowerMeta]       = useState<any>(null)
+  // ── Follower scraper state ──────────────────────────────────────────────────
+  const [followerUsername,    setFollowerUsername]    = useState('')
+  const [followerEcosystem,   setFollowerEcosystem]   = useState('Solana')
+  const [followerMaxCount,    setFollowerMaxCount]    = useState(200)
+  const [followerProspects,   setFollowerProspects]   = useState<Prospect[]>([])
+  const [followerScraping,    setFollowerScraping]    = useState(false)
+  const [followerError,       setFollowerError]       = useState('')
+  const [followerSavedIdx,    setFollowerSavedIdx]    = useState<Set<number>>(new Set())
+  const [followerSavingAll,   setFollowerSavingAll]   = useState(false)
+  const [followerSaveResult,  setFollowerSaveResult]  = useState<{ created: number; skipped: number } | null>(null)
+  const [followerMeta,        setFollowerMeta]        = useState<any>(null)
 
-  // Fetch enabled keywords on mount
+  // ── Follower count lookup state ─────────────────────────────────────────────
+  const [followerCount,        setFollowerCount]        = useState<number | null>(null)
+  const [followerCountLoading, setFollowerCountLoading] = useState(false)
+  const [followerCountError,   setFollowerCountError]   = useState('')
+
+  // ── Fetch enabled keywords on mount ────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
       setKeywordsLoading(true)
@@ -608,7 +638,48 @@ export function ResearchPanel() {
     load()
   }, [])
 
-  // Keyword toggle — appends to beliefSignal
+  // ── Debounced follower count lookup (800ms after user stops typing) ─────────
+  useEffect(() => {
+    const clean = followerUsername.replace('@', '').trim()
+
+    if (!clean) {
+      setFollowerCount(null)
+      setFollowerCountError('')
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setFollowerCountLoading(true)
+      setFollowerCountError('')
+      try {
+        const res  = await fetch(`/api/scrape/followers/count?username=${encodeURIComponent(clean)}`)
+        const data = await res.json()
+        if (!res.ok) {
+          setFollowerCountError(data.error ?? 'Not found')
+          setFollowerCount(null)
+        } else {
+          const count = data.followersCount ?? null
+          setFollowerCount(count)
+          // Auto-set max count to a sensible default for this account size
+          if (count !== null) {
+            const opts = buildFollowerOptions(count)
+            // Pick ~200 if available, else the second option, else the first
+            const preferred = opts.find(o => o.value === 200) ?? opts[Math.min(1, opts.length - 1)]
+            setFollowerMaxCount(preferred.value)
+          }
+        }
+      } catch {
+        setFollowerCountError('Network error')
+        setFollowerCount(null)
+      } finally {
+        setFollowerCountLoading(false)
+      }
+    }, 800)
+
+    return () => clearTimeout(timer)
+  }, [followerUsername])
+
+  // ── Keyword toggle ──────────────────────────────────────────────────────────
   const toggleKeyword = (text: string) => {
     setActiveKeywords(prev => {
       const isActive = prev.includes(text)
@@ -633,7 +704,7 @@ export function ResearchPanel() {
     criteria.ecosystems.length > 0 || criteria.platforms.length > 0 ||
     criteria.beliefSignal.trim() !== ''
 
-  // Shared: prospect → lead payload
+  // ── Shared: prospect → lead payload ────────────────────────────────────────
   const prospectToLead = (p: Prospect) => ({
     name: p.name, role: p.role ?? '', company: p.company ?? '',
     companyWebsite: p.companyWebsite ?? '', linkedinUrl: p.linkedinUrl ?? '',
@@ -646,7 +717,7 @@ export function ResearchPanel() {
     emailVerified: false, emailType: 'UNKNOWN',
   })
 
-  // Shared: export CSV
+  // ── Shared: export CSV ──────────────────────────────────────────────────────
   const exportCSV = (list: Prospect[], filename: string) => {
     const headers = ['name','role','company','companyWebsite','linkedinUrl','twitterUrl','farcasterUrl','redditUrl','quoraUrl','truthSocialUrl','email','emailSource','cryptoNiche','ecosystem','beliefSignal','activityLevel','tags','priority','priorityReason','sourceFound','confidence']
     const escape  = (v: any) => { if (v == null) return ''; const s = Array.isArray(v) ? v.join('; ') : String(v); return `"${s.replace(/"/g, '""')}"` }
@@ -657,7 +728,7 @@ export function ResearchPanel() {
     URL.revokeObjectURL(url)
   }
 
-  // Discover
+  // ── Discover ────────────────────────────────────────────────────────────────
   const handleDiscover = async () => {
     if (!hasAnyCriteria) return
     setDiscovering(true); setDiscoverError(''); setProspects([])
@@ -708,7 +779,7 @@ export function ResearchPanel() {
     }
   }
 
-  // Lookup
+  // ── Lookup ──────────────────────────────────────────────────────────────────
   const handleLookup = async () => {
     if (!lookupQuery.trim()) return
     setLooking(true); setLookupError(''); setLookupResult(null); setLookupSaved(false)
@@ -721,7 +792,7 @@ export function ResearchPanel() {
     finally   { setLooking(false) }
   }
 
-  // Follower scrape
+  // ── Follower scrape ─────────────────────────────────────────────────────────
   const handleFollowerScrape = async () => {
     if (!followerUsername.trim()) return
     setFollowerScraping(true); setFollowerError(''); setFollowerProspects([])
@@ -772,8 +843,12 @@ export function ResearchPanel() {
     if (res.ok && index !== undefined) setFollowerSavedIdx(prev => new Set([...prev, index]))
   }
 
-  const clearAll = () => { setCriteria({ niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '' }); setActiveKeywords([]) }
+  const clearAll = () => {
+    setCriteria({ niches: [], roles: [], ecosystems: [], platforms: [], beliefSignal: '' })
+    setActiveKeywords([])
+  }
 
+<<<<<<< Updated upstream
   const handleManualSave = async () => {
     if (!manualForm.name.trim() || !manualForm.email.trim()) return
     setManualSaving(true)
@@ -810,6 +885,9 @@ export function ResearchPanel() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+=======
+  // ── Render ────────────────────────────────────────────────────────────────────
+>>>>>>> Stashed changes
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -865,15 +943,12 @@ export function ResearchPanel() {
 
             <MultiSelectPills label="Niche — select one or more"             options={NICHES}    selected={criteria.niches}    onToggle={toggle('niches')}    />
             <MultiSelectPills label="Role — select one or more"              options={ROLES}     selected={criteria.roles}     onToggle={toggle('roles')}     />
-
-            {/* Ecosystem — preset pills + free text */}
             <EcosystemInput
               label="Ecosystem — select or type any"
               selected={criteria.ecosystems}
               onToggle={toggle('ecosystems')}
               mode="multi"
             />
-
             <MultiSelectPills label="Find on — select one or more platforms" options={PLATFORMS} selected={criteria.platforms} onToggle={toggle('platforms')} />
 
             {keywordsLoading && (
@@ -1017,7 +1092,7 @@ export function ResearchPanel() {
                 )}
               </div>
 
-              {/* Ecosystem — free text for follower scraper */}
+              {/* Ecosystem */}
               <EcosystemInput
                 label="Ecosystem tag for results"
                 selected={[]}
@@ -1027,15 +1102,37 @@ export function ResearchPanel() {
                 mode="single"
               />
 
-              {/* Max followers */}
+              {/* Max followers — dynamic based on fetched follower count */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Max Followers to Scan</label>
-                <select value={followerMaxCount} onChange={e => setFollowerMaxCount(Number(e.target.value))}
-                  className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
-                  <option value={100}>100 followers</option>
-                  <option value={200}>200 followers</option>
-                  <option value={500}>500 followers</option>
-                  <option value={1000}>1,000 followers</option>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Max Followers to Scan
+                  </label>
+                  {followerCountLoading && (
+                    <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                  )}
+                  {followerCount !== null && !followerCountLoading && (
+                    <span className="text-[10px] text-muted-foreground">
+                      @{followerUsername} has{' '}
+                      <strong className="text-foreground">{followerCount.toLocaleString()}</strong>{' '}
+                      followers
+                      {followerCount > 10_000 && (
+                        <span className="text-amber-400/70 ml-1">(capped at 10k)</span>
+                      )}
+                    </span>
+                  )}
+                  {followerCountError && !followerCountLoading && (
+                    <span className="text-[10px] text-red-400">{followerCountError}</span>
+                  )}
+                </div>
+                <select
+                  value={followerMaxCount}
+                  onChange={e => setFollowerMaxCount(Number(e.target.value))}
+                  className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {buildFollowerOptions(followerCount).map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -1064,7 +1161,7 @@ export function ResearchPanel() {
                 <div className="text-center">
                   <p className="text-sm font-medium">Scraping @{followerUsername} followers…</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Fetching up to {followerMaxCount} followers → scanning bios + tweets for emails → Claude analysis
+                    Fetching up to {followerMaxCount.toLocaleString()} followers → scanning bios + tweets for emails → Claude analysis
                   </p>
                 </div>
               </div>
