@@ -8,6 +8,7 @@ import {
   PlusCircle, X, Menu, Zap, FlaskConical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { LogoutButton } from '../LogoutButton'
 
 const NAV = [
   { href: '/',          label: 'Dashboard',       icon: LayoutDashboard },
@@ -112,6 +113,7 @@ function SidebarFooter() {
   return (
     <div className="px-4 py-3 border-t border-border shrink-0">
       <p className="text-[10px] text-muted-foreground">Made by Oti❤️</p>
+      <LogoutButton />
     </div>
   )
 }

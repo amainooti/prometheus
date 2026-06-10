@@ -8,7 +8,69 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ─── ENUMS ───────────────────────────────────────────────────────────────────
+model Lead {
+  id              String           @id @default(cuid())
+  name            String
+  linkedinUrl     String?
+  twitterUrl      String?
+  role            String?
+  company         String?
+  companyWebsite  String?
+  cryptoNiche     String?
+  beliefSignal    String?
+  activityLevel   ActivityLevel    @default(UNKNOWN)
+  tags            String[]
+  email           String?
+  emailSource     String?
+  emailConfidence EmailConfidence?
+  emailVerified   Boolean          @default(false)
+  emailType       EmailType        @default(UNKNOWN)
+  priority        Priority         @default(C)
+  status          LeadStatus       @default(NEW)
+  sourceFound     LeadSource?
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  ecosystem       String?
+  emailChecklist  EmailChecklist?
+
+  @@index([status])
+  @@index([priority])
+  @@index([emailConfidence])
+  @@index([createdAt])
+  @@index([ecosystem])
+  @@index([sourceFound])
+}
+
+model EmailChecklist {
+  id                     String   @id @default(cuid())
+  leadId                 String   @unique
+  checkedLinkedinLinks   Boolean  @default(false)
+  checkedTwitterBio      Boolean  @default(false)
+  checkedPersonalWebsite Boolean  @default(false)
+  checkedCompanyWebsite  Boolean  @default(false)
+  checkedTeamPage        Boolean  @default(false)
+  checkedContactPage     Boolean  @default(false)
+  checkedSubstack        Boolean  @default(false)
+  checkedLinktree        Boolean  @default(false)
+  usedDiscoveryTool      Boolean  @default(false)
+  verifiedEmail          Boolean  @default(false)
+  updatedAt              DateTime @updatedAt
+  lead                   Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+model Keyword {
+  id        String          @id @default(cuid())
+  text      String
+  category  KeywordCategory
+  enabled   Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@unique([text, category])
+  @@index([category])
+  @@index([enabled])
+}
 
 enum Priority {
   A_PLUS
@@ -69,11 +131,11 @@ enum LeadSource {
   GITHUB
   COMPANY_WEBSITE
   CRYPTO_NEWSLETTER
+  OTHER
   REDDIT
   BITCOINTALK
   QUORA
   MANUAL
-  OTHER
 }
 
 enum KeywordCategory {
@@ -88,86 +150,4 @@ enum KeywordCategory {
   ACTIVITY_SIGNAL
   EMAIL_DISCOVERY
   EXCLUSION
-}
-
-// ─── MODELS ──────────────────────────────────────────────────────────────────
-
-model Lead {
-  id              String    @id @default(cuid())
-
-  // Basic info
-  name            String
-  linkedinUrl     String?
-  twitterUrl      String?
-  role            String?
-  company         String?
-  companyWebsite  String?
-
-  // Crypto profile
-  cryptoNiche     String?
-  ecosystem       String?   // e.g. "Solana", "$PEPE", "Ethereum"
-  beliefSignal    String?
-  activityLevel   ActivityLevel @default(UNKNOWN)
-  tags            String[]
-
-  // Email
-  email           String?
-  emailSource     String?
-  emailConfidence EmailConfidence?
-  emailVerified   Boolean   @default(false)
-  emailType       EmailType @default(UNKNOWN)
-
-  // Scoring & status
-  priority        Priority  @default(C)
-  status          LeadStatus @default(NEW)
-
-  // Source & notes
-  sourceFound     LeadSource?
-  notes           String?
-
-  // Timestamps
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  // Relations
-  emailChecklist  EmailChecklist?
-
-  @@index([status])
-  @@index([priority])
-  @@index([emailConfidence])
-  @@index([createdAt])
-  @@index([ecosystem])
-  @@index([sourceFound])
-}
-
-model EmailChecklist {
-  id                      String  @id @default(cuid())
-  leadId                  String  @unique
-  lead                    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
-
-  checkedLinkedinLinks    Boolean @default(false)
-  checkedTwitterBio       Boolean @default(false)
-  checkedPersonalWebsite  Boolean @default(false)
-  checkedCompanyWebsite   Boolean @default(false)
-  checkedTeamPage         Boolean @default(false)
-  checkedContactPage      Boolean @default(false)
-  checkedSubstack         Boolean @default(false)
-  checkedLinktree         Boolean @default(false)
-  usedDiscoveryTool       Boolean @default(false)
-  verifiedEmail           Boolean @default(false)
-
-  updatedAt               DateTime @updatedAt
-}
-
-model Keyword {
-  id        String          @id @default(cuid())
-  text      String
-  category  KeywordCategory
-  enabled   Boolean         @default(true)
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-
-  @@unique([text, category])
-  @@index([category])
-  @@index([enabled])
 }
