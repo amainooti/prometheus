@@ -16,6 +16,23 @@ interface LeadTableProps {
   loading: boolean
 }
 
+const ECOSYSTEM_COLOR: Record<string, string> = {
+  Ethereum:  'bg-indigo-500/10 border-indigo-500/20 text-indigo-400',
+  Solana:    'bg-violet-500/10 border-violet-500/20 text-violet-400',
+  Bitcoin:   'bg-orange-500/10 border-orange-500/20 text-orange-400',
+  Base:      'bg-blue-500/10  border-blue-500/20  text-blue-400',
+  Arbitrum:  'bg-sky-500/10   border-sky-500/20   text-sky-400',
+  Optimism:  'bg-red-500/10   border-red-500/20   text-red-400',
+  Cosmos:    'bg-purple-500/10 border-purple-500/20 text-purple-400',
+  Sui:       'bg-cyan-500/10  border-cyan-500/20  text-cyan-400',
+  Aptos:     'bg-teal-500/10  border-teal-500/20  text-teal-400',
+  Polygon:   'bg-fuchsia-500/10 border-fuchsia-500/20 text-fuchsia-400',
+  Avalanche: 'bg-red-600/10  border-red-600/20   text-red-500',
+  TON:       'bg-blue-600/10  border-blue-600/20  text-blue-500',
+}
+const ecoClass = (eco: string) =>
+  ECOSYSTEM_COLOR[eco] ?? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+
 export function LeadTable({ leads, loading }: LeadTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
 
@@ -53,6 +70,22 @@ export function LeadTable({ leads, loading }: LeadTableProps) {
       },
     },
     {
+      accessorKey: 'ecosystem',
+      header: 'Ecosystem',
+      cell: ({ row }) => {
+        const eco = row.original.ecosystem
+        if (!eco) return <span className="text-muted-foreground/40 text-xs">—</span>
+        return (
+          <span className={cn(
+            'text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap',
+            ecoClass(eco)
+          )}>
+            {eco}
+          </span>
+        )
+      },
+    },
+    {
       accessorKey: 'status',
       header: 'Status',
       cell: ({ row }) => <StatusBadge status={row.original.status} />,
@@ -61,7 +94,7 @@ export function LeadTable({ leads, loading }: LeadTableProps) {
       id: 'email',
       header: 'Email',
       cell: ({ row }) => {
-        const { email, emailVerified, emailConfidence } = row.original
+        const { email, emailVerified } = row.original
         if (!email) return <span className="text-muted-foreground/40 text-xs">—</span>
         return (
           <div className="flex items-center gap-1.5 min-w-0">
@@ -162,9 +195,8 @@ export function LeadTable({ leads, loading }: LeadTableProps) {
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
-      {/* Horizontal scroll on mobile */}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[700px]">
+        <table className="w-full text-sm min-w-[800px]">
           <thead>
             {table.getHeaderGroups().map(hg => (
               <tr key={hg.id} className="border-b border-border bg-secondary/50">

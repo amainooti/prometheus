@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PRIORITY_LABELS } from '@/types'
+import { getScanOptions, formatScanOption, FALLBACK_SCAN_OPTIONS } from '@/lib/follower-scan-option'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -130,9 +131,6 @@ function MultiSelectPills({ label, options, selected, onToggle }: {
 }
 
 // ─── EcosystemInput ───────────────────────────────────────────────────────────
-// Preset pills + free-text for any custom ecosystem (memes, new chains, etc.)
-// mode='multi'  → used in Discover (multiple ecosystems)
-// mode='single' → used in Follower scraper (one ecosystem tag)
 
 function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange, mode = 'multi' }: {
   label:          string
@@ -152,7 +150,6 @@ function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange
     setDraft('')
   }
 
-  // Custom ecosystems = anything selected that isn't in the preset list
   const customSelected = mode === 'multi'
     ? selected.filter(s => !PRESET_ECOSYSTEMS.includes(s))
     : (singleValue && !PRESET_ECOSYSTEMS.includes(singleValue) ? [singleValue] : [])
@@ -169,8 +166,6 @@ function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange
           </span>
         )}
       </div>
-
-      {/* Preset pills */}
       <div className="flex flex-wrap gap-1.5">
         {PRESET_ECOSYSTEMS.map(eco => {
           const isActive = mode === 'multi' ? selected.includes(eco) : singleValue === eco
@@ -186,8 +181,6 @@ function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange
             </button>
           )
         })}
-
-        {/* Custom ecosystem tags — shown as amber removable pills */}
         {customSelected.map(eco => (
           <button key={eco} type="button"
             onClick={() => mode === 'multi' ? onToggle(eco) : onSingleChange?.('')}
@@ -196,8 +189,6 @@ function EcosystemInput({ label, selected, onToggle, singleValue, onSingleChange
           </button>
         ))}
       </div>
-
-      {/* Free-text input for custom ecosystems */}
       <div className="flex items-center gap-2">
         <input
           type="text"
@@ -389,13 +380,9 @@ function ProspectResultsBlock({ prospects, savedIndexes, savingAll, saveAllResul
 }) {
   const withEmailCount    = prospects.filter(p => p.email).length
   const withoutEmailCount = prospects.length - withEmailCount
-  const allEmailSaved     = prospects.filter(p => p.email).every((_, i) =>
-    savedIndexes.has(prospects.indexOf(prospects.filter(p2 => p2.email)[i]))
-  )
 
   return (
     <div className="space-y-3">
-      {/* Summary bar */}
       <div className="flex items-center gap-3 flex-wrap">
         <p className="text-sm font-semibold">
           {prospects.length} prospect{prospects.length !== 1 ? 's' : ''} found
@@ -413,9 +400,7 @@ function ProspectResultsBlock({ prospects, savedIndexes, savingAll, saveAllResul
         </div>
       </div>
 
-      {/* Action buttons */}
       <div className="flex items-center gap-2 flex-wrap">
-        {/* PRIMARY: Save email-only — the one-shot button */}
         <button
           onClick={onSaveEmailOnly}
           disabled={savingAll || withEmailCount === 0}
@@ -425,21 +410,16 @@ function ProspectResultsBlock({ prospects, savedIndexes, savingAll, saveAllResul
             ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
             : <><Mail className="w-3.5 h-3.5" /> Save {withEmailCount} with Email to CRM</>}
         </button>
-
-        {/* SECONDARY: Export CSV */}
         <button onClick={onExportCSV}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary border border-border rounded-md text-xs font-medium hover:bg-secondary/80">
           <Download className="w-3.5 h-3.5" /> Export CSV
         </button>
-
-        {/* TERTIARY: Save all (including no-email) */}
         <button onClick={onSaveAll} disabled={savingAll || savedIndexes.size === prospects.length}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary border border-border rounded-md text-xs font-medium hover:bg-secondary/80 disabled:opacity-50">
           {savedIndexes.size === prospects.length
             ? <><CheckCircle className="w-3.5 h-3.5 text-green-400" /> All Saved</>
             : <><SaveAll className="w-3.5 h-3.5" /> Save All {prospects.length - savedIndexes.size}</>}
         </button>
-
         {onResearch && (
           <button onClick={onResearch} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground ml-auto">
             <RefreshCw className="w-3 h-3" /> {researchLabel ?? 'Search again'}
@@ -481,59 +461,33 @@ function AddManualModal({ form, saving, done, onChange, onSave, onClose }: {
             <X className="w-4 h-4" />
           </button>
         </div>
-
         <div className="p-5 space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Name *</label>
-            <input
-              type="text" value={form.name} onChange={e => onChange('name', e.target.value)}
-              placeholder="e.g. John Smith"
-              className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Email *</label>
-            <input
-              type="email" value={form.email} onChange={e => onChange('email', e.target.value)}
-              placeholder="e.g. john@gmail.com"
-              className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Ecosystem / Ticker</label>
-            <input
-              type="text" value={form.ecosystem} onChange={e => onChange('ecosystem', e.target.value)}
-              placeholder="e.g. Solana, $PEPE, Ethereum"
-              className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Twitter / X URL</label>
-            <input
-              type="text" value={form.twitterUrl} onChange={e => onChange('twitterUrl', e.target.value)}
-              placeholder="e.g. https://twitter.com/username"
-              className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-          </div>
-
+          {[
+            { field: 'name',       label: 'Name *',             type: 'text',  placeholder: 'e.g. John Smith' },
+            { field: 'email',      label: 'Email *',            type: 'email', placeholder: 'e.g. john@gmail.com' },
+            { field: 'ecosystem',  label: 'Ecosystem / Ticker', type: 'text',  placeholder: 'e.g. Solana, $PEPE, Ethereum' },
+            { field: 'twitterUrl', label: 'Twitter / X URL',    type: 'text',  placeholder: 'e.g. https://twitter.com/username' },
+          ].map(({ field, label, type, placeholder }) => (
+            <div key={field} className="space-y-1.5">
+              <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{label}</label>
+              <input
+                type={type} value={(form as any)[field]} onChange={e => onChange(field, e.target.value)}
+                placeholder={placeholder}
+                className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          ))}
           <div className="space-y-1.5">
             <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
             <textarea
               value={form.notes} onChange={e => onChange('notes', e.target.value)}
-              placeholder="Any context about this person…"
-              rows={2}
+              placeholder="Any context about this person…" rows={2}
               className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
             />
           </div>
         </div>
-
         <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
-          <button onClick={onClose} className="px-4 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
-            Cancel
-          </button>
+          <button onClick={onClose} className="px-4 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
           <button
             onClick={onSave}
             disabled={saving || !form.name.trim() || !form.email.trim()}
@@ -584,16 +538,18 @@ export function ResearchPanel() {
   const [lookupSaved,  setLookupSaved]  = useState(false)
 
   // Follower scraper state
-  const [followerUsername,   setFollowerUsername]   = useState('')
-  const [followerEcosystem,  setFollowerEcosystem]  = useState('Solana')
-  const [followerMaxCount,   setFollowerMaxCount]   = useState(200)
-  const [followerProspects,  setFollowerProspects]  = useState<Prospect[]>([])
-  const [followerScraping,   setFollowerScraping]   = useState(false)
-  const [followerError,      setFollowerError]      = useState('')
-  const [followerSavedIdx,   setFollowerSavedIdx]   = useState<Set<number>>(new Set())
-  const [followerSavingAll,  setFollowerSavingAll]  = useState(false)
-  const [followerSaveResult, setFollowerSaveResult] = useState<{ created: number; skipped: number } | null>(null)
-  const [followerMeta,       setFollowerMeta]       = useState<any>(null)
+  const [followerUsername,    setFollowerUsername]    = useState('')
+  const [followerEcosystem,   setFollowerEcosystem]   = useState('Solana')
+  const [followerMaxCount,    setFollowerMaxCount]    = useState<number>(FALLBACK_SCAN_OPTIONS[1]) // default 200
+  const [followerCount,       setFollowerCount]       = useState<number | null>(null)
+  const [followerCountStatus, setFollowerCountStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+  const [followerProspects,   setFollowerProspects]   = useState<Prospect[]>([])
+  const [followerScraping,    setFollowerScraping]    = useState(false)
+  const [followerError,       setFollowerError]       = useState('')
+  const [followerSavedIdx,    setFollowerSavedIdx]    = useState<Set<number>>(new Set())
+  const [followerSavingAll,   setFollowerSavingAll]   = useState(false)
+  const [followerSaveResult,  setFollowerSaveResult]  = useState<{ created: number; skipped: number } | null>(null)
+  const [followerMeta,        setFollowerMeta]        = useState<any>(null)
 
   // Fetch enabled keywords on mount
   useEffect(() => {
@@ -608,7 +564,51 @@ export function ResearchPanel() {
     load()
   }, [])
 
-  // Keyword toggle — appends to beliefSignal
+  // ── Debounced follower count fetch ────────────────────────────────────────
+  useEffect(() => {
+    const trimmed = followerUsername.trim()
+    if (!trimmed) {
+      setFollowerCount(null)
+      setFollowerCountStatus('idle')
+      return
+    }
+
+    setFollowerCountStatus('loading')
+    const timer = setTimeout(async () => {
+      try {
+        const res  = await fetch(`/api/scrape/followers/count?username=${encodeURIComponent(trimmed)}`)
+        const data = await res.json()
+        if (res.ok && typeof data.followersCount === 'number') {
+          setFollowerCount(data.followersCount)
+          setFollowerCountStatus('ok')
+          // Clamp current selection to the new option list
+          const opts = getScanOptions(data.followersCount)
+          if (!opts.includes(followerMaxCount)) {
+            // Pick the largest option that doesn't exceed current selection, or the max available
+            const best = opts.filter(o => o <= followerMaxCount).pop() ?? opts[opts.length - 1]
+            setFollowerMaxCount(best)
+          }
+        } else {
+          setFollowerCount(null)
+          setFollowerCountStatus('error')
+        }
+      } catch {
+        setFollowerCount(null)
+        setFollowerCountStatus('error')
+      }
+    }, 600)
+
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followerUsername])
+
+  // Derived scan options — use real count when available, fallback otherwise
+  const scanOptions =
+    followerCountStatus === 'ok' && followerCount !== null
+      ? getScanOptions(followerCount)
+      : [...FALLBACK_SCAN_OPTIONS]
+
+  // Keyword toggle
   const toggleKeyword = (text: string) => {
     setActiveKeywords(prev => {
       const isActive = prev.includes(text)
@@ -633,7 +633,6 @@ export function ResearchPanel() {
     criteria.ecosystems.length > 0 || criteria.platforms.length > 0 ||
     criteria.beliefSignal.trim() !== ''
 
-  // Shared: prospect → lead payload
   const prospectToLead = (p: Prospect) => ({
     name: p.name, role: p.role ?? '', company: p.company ?? '',
     companyWebsite: p.companyWebsite ?? '', linkedinUrl: p.linkedinUrl ?? '',
@@ -646,7 +645,6 @@ export function ResearchPanel() {
     emailVerified: false, emailType: 'UNKNOWN',
   })
 
-  // Shared: export CSV
   const exportCSV = (list: Prospect[], filename: string) => {
     const headers = ['name','role','company','companyWebsite','linkedinUrl','twitterUrl','farcasterUrl','redditUrl','quoraUrl','truthSocialUrl','email','emailSource','cryptoNiche','ecosystem','beliefSignal','activityLevel','tags','priority','priorityReason','sourceFound','confidence']
     const escape  = (v: any) => { if (v == null) return ''; const s = Array.isArray(v) ? v.join('; ') : String(v); return `"${s.replace(/"/g, '""')}"` }
@@ -684,14 +682,13 @@ export function ResearchPanel() {
     setSavedIndexes(newSaved); setSaveAllResult({ created, skipped }); setSavingAll(false)
   }
 
-  // One-shot: save only prospects that have an email
   const handleSaveEmailOnly = async () => {
     if (!prospects.length) return
     setSavingAll(true); setSaveAllResult(null)
     let created = 0, skipped = 0
     const newSaved = new Set(savedIndexes)
     for (let i = 0; i < prospects.length; i++) {
-      if (!prospects[i].email) continue          // skip no-email
+      if (!prospects[i].email) continue
       if (savedIndexes.has(i)) { skipped++; continue }
       const res = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(prospectToLead(prospects[i])) })
       if (res.status === 201) { created++; newSaved.add(i) } else skipped++
@@ -752,14 +749,13 @@ export function ResearchPanel() {
     setFollowerSavedIdx(newSaved); setFollowerSaveResult({ created, skipped }); setFollowerSavingAll(false)
   }
 
-  // One-shot: save only follower prospects with email
   const handleFollowerSaveEmailOnly = async () => {
     if (!followerProspects.length) return
     setFollowerSavingAll(true); setFollowerSaveResult(null)
     let created = 0, skipped = 0
     const newSaved = new Set(followerSavedIdx)
     for (let i = 0; i < followerProspects.length; i++) {
-      if (!followerProspects[i].email) continue  // skip no-email
+      if (!followerProspects[i].email) continue
       if (followerSavedIdx.has(i)) { skipped++; continue }
       const res = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(prospectToLead(followerProspects[i])) })
       if (res.status === 201) { created++; newSaved.add(i) } else skipped++
@@ -779,47 +775,33 @@ export function ResearchPanel() {
     setManualSaving(true)
     try {
       const res = await fetch('/api/leads', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          name:        manualForm.name.trim(),
-          email:       manualForm.email.trim(),
-          ecosystem:   manualForm.ecosystem.trim(),
-          twitterUrl:  manualForm.twitterUrl.trim(),
-          notes:       manualForm.notes.trim(),
-          role:        '',
-          company:     '',
-          activityLevel: 'UNKNOWN',
-          tags:        [],
-          priority:    'B',
-          status:      'NEW',
-          sourceFound: 'MANUAL',
-          emailVerified: false,
-          emailType:   'UNKNOWN',
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: manualForm.name.trim(), email: manualForm.email.trim(),
+          ecosystem: manualForm.ecosystem.trim(), twitterUrl: manualForm.twitterUrl.trim(),
+          notes: manualForm.notes.trim(), role: '', company: '',
+          activityLevel: 'UNKNOWN', tags: [], priority: 'B', status: 'NEW',
+          sourceFound: 'MANUAL', emailVerified: false, emailType: 'UNKNOWN',
         }),
       })
       if (res.ok) {
         setManualDone(true)
         setTimeout(() => {
-          setShowManual(false)
-          setManualDone(false)
+          setShowManual(false); setManualDone(false)
           setManualForm({ name: '', email: '', ecosystem: '', twitterUrl: '', notes: '' })
         }, 1200)
       }
     } finally { setManualSaving(false) }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-5 max-w-3xl">
 
-      {/* Manual add modal */}
       {showManual && (
         <AddManualModal
-          form={manualForm}
-          saving={manualSaving}
-          done={manualDone}
+          form={manualForm} saving={manualSaving} done={manualDone}
           onChange={(field, value) => setManualForm(prev => ({ ...prev, [field]: value }))}
           onSave={handleManualSave}
           onClose={() => { setShowManual(false); setManualForm({ name: '', email: '', ecosystem: '', twitterUrl: '', notes: '' }) }}
@@ -841,7 +823,6 @@ export function ResearchPanel() {
         ))}
       </div>
 
-      {/* Add profile manually */}
       <div className="flex justify-end">
         <button
           onClick={() => setShowManual(true)}
@@ -865,15 +846,7 @@ export function ResearchPanel() {
 
             <MultiSelectPills label="Niche — select one or more"             options={NICHES}    selected={criteria.niches}    onToggle={toggle('niches')}    />
             <MultiSelectPills label="Role — select one or more"              options={ROLES}     selected={criteria.roles}     onToggle={toggle('roles')}     />
-
-            {/* Ecosystem — preset pills + free text */}
-            <EcosystemInput
-              label="Ecosystem — select or type any"
-              selected={criteria.ecosystems}
-              onToggle={toggle('ecosystems')}
-              mode="multi"
-            />
-
+            <EcosystemInput label="Ecosystem — select or type any" selected={criteria.ecosystems} onToggle={toggle('ecosystems')} mode="multi" />
             <MultiSelectPills label="Find on — select one or more platforms" options={PLATFORMS} selected={criteria.platforms} onToggle={toggle('platforms')} />
 
             {keywordsLoading && (
@@ -926,8 +899,7 @@ export function ResearchPanel() {
           {prospects.length > 0 && !discovering && (
             <ProspectResultsBlock
               prospects={prospects} savedIndexes={savedIndexes} savingAll={savingAll} saveAllResult={saveAllResult}
-              onSaveAll={handleSaveAll}
-              onSaveEmailOnly={handleSaveEmailOnly}
+              onSaveAll={handleSaveAll} onSaveEmailOnly={handleSaveEmailOnly}
               onExportCSV={() => exportCSV(prospects, `prospects-${new Date().toISOString().slice(0,10)}.csv`)}
               onSaveOne={saveAsLead} onResearch={handleDiscover} researchLabel="Search again"
             />
@@ -1002,8 +974,23 @@ export function ResearchPanel() {
                     placeholder="solana_foundation"
                     className="flex-1 bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                     disabled={followerScraping} />
+                  {/* Inline follower count badge */}
+                  {followerCountStatus === 'loading' && (
+                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0">
+                      <Loader2 className="w-3 h-3 animate-spin" /> checking…
+                    </span>
+                  )}
+                  {followerCountStatus === 'ok' && followerCount !== null && (
+                    <span className="text-[11px] text-muted-foreground shrink-0">
+                      {followerCount.toLocaleString()} followers
+                    </span>
+                  )}
+                  {followerCountStatus === 'error' && (
+                    <span className="text-[11px] text-red-400/70 shrink-0">couldn't fetch count</span>
+                  )}
                 </div>
-                {/* Suggestions based on selected ecosystem */}
+
+                {/* Suggestions */}
                 {ECOSYSTEM_ACCOUNTS[followerEcosystem] && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] text-muted-foreground shrink-0">Suggestions:</span>
@@ -1017,25 +1004,31 @@ export function ResearchPanel() {
                 )}
               </div>
 
-              {/* Ecosystem — free text for follower scraper */}
+              {/* Ecosystem */}
               <EcosystemInput
                 label="Ecosystem tag for results"
-                selected={[]}
-                onToggle={() => {}}
+                selected={[]} onToggle={() => {}}
                 singleValue={followerEcosystem}
                 onSingleChange={v => setFollowerEcosystem(v || 'Crypto')}
                 mode="single"
               />
 
-              {/* Max followers */}
+              {/* Max followers — dynamic options */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Max Followers to Scan</label>
-                <select value={followerMaxCount} onChange={e => setFollowerMaxCount(Number(e.target.value))}
-                  className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
-                  <option value={100}>100 followers</option>
-                  <option value={200}>200 followers</option>
-                  <option value={500}>500 followers</option>
-                  <option value={1000}>1,000 followers</option>
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Max Followers to Scan
+                  {followerCountStatus === 'error' && (
+                    <span className="ml-1 normal-case font-normal text-muted-foreground/60">(using defaults — count unavailable)</span>
+                  )}
+                </label>
+                <select
+                  value={followerMaxCount}
+                  onChange={e => setFollowerMaxCount(Number(e.target.value))}
+                  className="w-full bg-secondary border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {scanOptions.map(n => (
+                    <option key={n} value={n}>{formatScanOption(n)}</option>
+                  ))}
                 </select>
               </div>
 
@@ -1064,7 +1057,7 @@ export function ResearchPanel() {
                 <div className="text-center">
                   <p className="text-sm font-medium">Scraping @{followerUsername} followers…</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Fetching up to {followerMaxCount} followers → scanning bios + tweets for emails → Claude analysis
+                    Fetching up to {followerMaxCount.toLocaleString()} followers → scanning bios + tweets for emails → Claude analysis
                   </p>
                 </div>
               </div>
@@ -1082,15 +1075,13 @@ export function ResearchPanel() {
             {followerProspects.length > 0 && !followerScraping && (
               <ProspectResultsBlock
                 prospects={followerProspects} savedIndexes={followerSavedIdx} savingAll={followerSavingAll} saveAllResult={followerSaveResult}
-                onSaveAll={handleFollowerSaveAll}
-                onSaveEmailOnly={handleFollowerSaveEmailOnly}
+                onSaveAll={handleFollowerSaveAll} onSaveEmailOnly={handleFollowerSaveEmailOnly}
                 onExportCSV={() => exportCSV(followerProspects, `followers-${followerUsername}-${new Date().toISOString().slice(0,10)}.csv`)}
                 onSaveOne={saveFollowerLead}
                 onResearch={handleFollowerScrape} researchLabel="Scrape again"
               />
             )}
           </div>
-
         </div>
       )}
     </div>

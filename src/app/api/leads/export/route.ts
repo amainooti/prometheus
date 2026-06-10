@@ -11,18 +11,33 @@ export async function GET(req: NextRequest) {
     const priority   = searchParams.getAll('priority')
     const status     = searchParams.getAll('status')
     const confidence = searchParams.getAll('emailConfidence')
+    const activity   = searchParams.getAll('activityLevel')
+    const source     = searchParams.getAll('sourceFound')
+    const verified   = searchParams.get('emailVerified')
+    // ecosystem can be sent multiple times (one per selected ecosystem)
+    const ecosystems = searchParams.getAll('ecosystem')
 
     const where: Prisma.LeadWhereInput = {
       ...(search ? {
         OR: [
-          { name:    { contains: search, mode: 'insensitive' } },
-          { company: { contains: search, mode: 'insensitive' } },
-          { email:   { contains: search, mode: 'insensitive' } },
+          { name:      { contains: search, mode: 'insensitive' } },
+          { company:   { contains: search, mode: 'insensitive' } },
+          { email:     { contains: search, mode: 'insensitive' } },
+          { ecosystem: { contains: search, mode: 'insensitive' } },
         ],
       } : {}),
       ...(priority.length   ? { priority:        { in: priority   as any[] } } : {}),
       ...(status.length     ? { status:          { in: status     as any[] } } : {}),
       ...(confidence.length ? { emailConfidence: { in: confidence as any[] } } : {}),
+      ...(activity.length   ? { activityLevel:   { in: activity   as any[] } } : {}),
+      ...(source.length     ? { sourceFound:     { in: source     as any[] } } : {}),
+      ...(verified !== null && verified !== '' ? { emailVerified: verified === 'true' } : {}),
+      // Multiple ecosystems → OR across them (case-insensitive contains)
+      ...(ecosystems.length ? {
+        OR: ecosystems.map(eco => ({
+          ecosystem: { contains: eco, mode: 'insensitive' as const },
+        })),
+      } : {}),
     }
 
     const leads = await prisma.lead.findMany({
@@ -31,10 +46,10 @@ export async function GET(req: NextRequest) {
     })
 
     const headers = [
-      'name','role','company','linkedinUrl','twitterUrl','companyWebsite',
-      'cryptoNiche','beliefSignal','activityLevel','tags',
-      'email','emailSource','emailConfidence','emailVerified','emailType',
-      'priority','status','sourceFound','notes','createdAt',
+      'name', 'role', 'company', 'ecosystem', 'linkedinUrl', 'twitterUrl', 'companyWebsite',
+      'cryptoNiche', 'beliefSignal', 'activityLevel', 'tags',
+      'email', 'emailSource', 'emailConfidence', 'emailVerified', 'emailType',
+      'priority', 'status', 'sourceFound', 'notes', 'createdAt',
     ]
 
     const escape = (v: any) => {
@@ -49,6 +64,7 @@ export async function GET(req: NextRequest) {
         escape(l.name),
         escape(l.role),
         escape(l.company),
+        escape(l.ecosystem),
         escape(l.linkedinUrl),
         escape(l.twitterUrl),
         escape(l.companyWebsite),
@@ -69,10 +85,16 @@ export async function GET(req: NextRequest) {
       ].join(',')),
     ]
 
+    // Build a descriptive filename — if filtering by ecosystems, include them
+    const ecoSuffix = ecosystems.length
+      ? `-${ecosystems.join('-').toLowerCase()}`
+      : ''
+    const filename = `leads${ecoSuffix}-${new Date().toISOString().slice(0, 10)}.csv`
+
     return new NextResponse(rows.join('\n'), {
       headers: {
         'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="leads-${new Date().toISOString().slice(0,10)}.csv"`,
+        'Content-Disposition': `attachment; filename="${filename}"`,
       },
     })
   } catch (error) {

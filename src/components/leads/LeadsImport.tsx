@@ -18,8 +18,26 @@ interface LeadImportProps {
 
 const EXPECTED_COLUMNS = [
   'name', 'role', 'company', 'linkedinUrl', 'twitterUrl',
-  'email', 'emailConfidence', 'priority', 'status', 'cryptoNiche', 'notes',
+  'email', 'emailConfidence', 'priority', 'status',
+  'cryptoNiche', 'ecosystem', 'notes',
 ]
+
+const ECOSYSTEM_COLOR: Record<string, string> = {
+  Ethereum:  'bg-indigo-500/10 border-indigo-500/20 text-indigo-400',
+  Solana:    'bg-violet-500/10 border-violet-500/20 text-violet-400',
+  Bitcoin:   'bg-orange-500/10 border-orange-500/20 text-orange-400',
+  Base:      'bg-blue-500/10  border-blue-500/20  text-blue-400',
+  Arbitrum:  'bg-sky-500/10   border-sky-500/20   text-sky-400',
+  Optimism:  'bg-red-500/10   border-red-500/20   text-red-400',
+  Cosmos:    'bg-purple-500/10 border-purple-500/20 text-purple-400',
+  Sui:       'bg-cyan-500/10  border-cyan-500/20  text-cyan-400',
+  Aptos:     'bg-teal-500/10  border-teal-500/20  text-teal-400',
+  Polygon:   'bg-fuchsia-500/10 border-fuchsia-500/20 text-fuchsia-400',
+  Avalanche: 'bg-red-600/10  border-red-600/20   text-red-500',
+  TON:       'bg-blue-600/10  border-blue-600/20  text-blue-500',
+}
+const ecoClass = (eco: string) =>
+  ECOSYSTEM_COLOR[eco] ?? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
 
 export function LeadImport({ onClose, onSuccess }: LeadImportProps) {
   const fileRef                     = useRef<HTMLInputElement>(null)
@@ -28,6 +46,11 @@ export function LeadImport({ onClose, onSuccess }: LeadImportProps) {
   const [fileName, setFileName]     = useState('')
   const [loading,  setLoading]      = useState(false)
   const [result,   setResult]       = useState<ImportResult | null>(null)
+
+  // Derive the unique ecosystems in the uploaded file for preview
+  const ecosystemsInFile = Array.from(
+    new Set(rows.map(r => r['ecosystem'] ?? r['Ecosystem'] ?? '').filter(Boolean))
+  ).slice(0, 8)
 
   const handleFile = (file: File) => {
     setFileName(file.name)
@@ -86,12 +109,25 @@ export function LeadImport({ onClose, onSuccess }: LeadImportProps) {
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Expected CSV Columns</p>
           <div className="flex flex-wrap gap-1.5">
             {EXPECTED_COLUMNS.map(col => (
-              <span key={col} className="px-2 py-0.5 bg-secondary border border-border rounded text-[10px] font-mono text-muted-foreground">
+              <span
+                key={col}
+                className={cn(
+                  'px-2 py-0.5 rounded text-[10px] font-mono border',
+                  col === 'ecosystem'
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                    : 'bg-secondary border-border text-muted-foreground'
+                )}
+              >
                 {col}
               </span>
             ))}
           </div>
-          <p className="text-[10px] text-muted-foreground">Only <span className="font-semibold text-foreground">name</span> is required. Column headers are case-insensitive.</p>
+          <p className="text-[10px] text-muted-foreground">
+            Only <span className="font-semibold text-foreground">name</span> is required.{' '}
+            <span className="text-amber-400 font-medium">ecosystem</span> values like{' '}
+            <span className="font-mono">Solana</span>, <span className="font-mono">Ethereum</span>,{' '}
+            <span className="font-mono">Bitcoin</span> will be preserved and shown on the dashboard.
+          </p>
         </div>
 
         {/* Drop zone */}
@@ -129,16 +165,43 @@ export function LeadImport({ onClose, onSuccess }: LeadImportProps) {
               </button>
             </div>
 
+            {/* Ecosystem preview — show if the file has ecosystem values */}
+            {ecosystemsInFile.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Ecosystems detected in file
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {ecosystemsInFile.map(eco => (
+                    <span key={eco} className={cn(
+                      'px-2.5 py-0.5 rounded-full text-[10px] font-semibold border',
+                      ecoClass(eco)
+                    )}>
+                      {eco}
+                    </span>
+                  ))}
+                  {Array.from(new Set(rows.map(r => r['ecosystem'] ?? r['Ecosystem'] ?? '').filter(Boolean))).length > 8 && (
+                    <span className="text-[10px] text-muted-foreground px-2 py-0.5">
+                      +{Array.from(new Set(rows.map(r => r['ecosystem'] ?? r['Ecosystem'] ?? '').filter(Boolean))).length - 8} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Column match indicator */}
             <div className="space-y-1.5">
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Detected Columns</p>
               <div className="flex flex-wrap gap-1.5">
                 {headers.map(h => {
                   const matched = EXPECTED_COLUMNS.some(c => c.toLowerCase() === h.toLowerCase())
+                  const isEco   = h.toLowerCase() === 'ecosystem'
                   return (
                     <span key={h} className={cn(
                       'px-2 py-0.5 rounded text-[10px] font-mono border',
-                      matched
+                      isEco
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                        : matched
                         ? 'bg-green-500/10 border-green-500/20 text-green-400'
                         : 'bg-secondary border-border text-muted-foreground'
                     )}>
@@ -163,11 +226,18 @@ export function LeadImport({ onClose, onSuccess }: LeadImportProps) {
                 <tbody>
                   {rows.slice(0, 4).map((row, i) => (
                     <tr key={i} className="border-b border-border last:border-0">
-                      {headers.slice(0, 6).map(h => (
-                        <td key={h} className="px-3 py-2 text-muted-foreground truncate max-w-[120px]">
-                          {row[h] ?? '—'}
-                        </td>
-                      ))}
+                      {headers.slice(0, 6).map(h => {
+                        const isEco = h.toLowerCase() === 'ecosystem'
+                        const val   = row[h] ?? '—'
+                        return (
+                          <td key={h} className="px-3 py-2 text-muted-foreground truncate max-w-[120px]">
+                            {isEco && val !== '—'
+                              ? <span className={cn('px-1.5 py-0.5 rounded-full text-[10px] font-semibold border', ecoClass(val))}>{val}</span>
+                              : val
+                            }
+                          </td>
+                        )
+                      })}
                       {headers.length > 6 && <td className="px-3 py-2 text-muted-foreground">…</td>}
                     </tr>
                   ))}
