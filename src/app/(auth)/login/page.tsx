@@ -1,14 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, Lock, Eye, EyeOff, Flame } from 'lucide-react'
 
-export default function LoginPage() {
+function LoginForm() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const from         = searchParams.get('from') ?? '/'
-// @note fix the routing to / not push to /dashboard
+
   const [password, setPassword] = useState('')
   const [show,     setShow]     = useState(false)
   const [loading,  setLoading]  = useState(false)
@@ -48,8 +48,6 @@ export default function LoginPage() {
 
   return (
     <div className="w-full max-w-sm px-4 space-y-8">
-
-      {/* Logo */}
       <div className="flex flex-col items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
           <Flame className="w-5 h-5 text-primary" />
@@ -60,7 +58,6 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Card */}
       <div className={`bg-card border border-border rounded-xl p-6 space-y-5 ${shake ? 'animate-shake' : ''}`}>
         <div>
           <h2 className="text-sm font-semibold">Sign in</h2>
@@ -124,5 +121,13 @@ export default function LoginPage() {
         .animate-shake { animation: shake 0.4s ease-in-out; }
       `}</style>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   )
 }
