@@ -1,6 +1,6 @@
 // src/app/api/scrape/followers/route.ts
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { firstEmail, extractEmails, isHighProfile, sleep, parseEcosystem } from '@/lib/scrapperUtils'
 
 const TWITTER_API_BASE = 'https://api.twitterapi.io'
@@ -37,6 +37,18 @@ interface RawFollowerProfile {
   tweetEmails: string[]
 }
 
+// ── SSE helpers ───────────────────────────────────────────────────────────────
+
+type ProgressEvent =
+  | { type: 'stage';    stage: string; detail?: string }
+  | { type: 'progress'; current: number; total: number; label: string }
+  | { type: 'done';     results: any[]; meta: any }
+  | { type: 'error';    message: string }
+
+function encode(event: ProgressEvent): string {
+  return `data: ${JSON.stringify(event)}\n\n`
+}
+
 // ── Twitter API fetch ─────────────────────────────────────────────────────────
 
 async function twitterFetch(path: string, apiKey: string): Promise<any> {
@@ -55,20 +67,17 @@ async function getFollowersPage(
   cursor:   string | null,
   apiKey:   string,
 ): Promise<{ users: TwitterUser[]; hasNextPage: boolean; nextCursor: string | null }> {
-  const params = new URLSearchParams({ userName: username, count: '200' })
+  const params = new URLSearchParams({ userName: username, count: '100' })
   if (cursor) params.set('cursor', cursor)
   const data = await twitterFetch(`/twitter/user/followers?${params}`, apiKey)
-  console.log('[followers] Raw API response keys:', Object.keys(data))
-  const users = data.followers ?? data.users ?? data.data ?? []
-  console.log(`[followers] Users in page: ${users.length}`)
   return {
-    users,
+    users:       data.followers ?? data.users ?? [],
     hasNextPage: data.has_next_page ?? false,
     nextCursor:  data.next_cursor ?? null,
   }
 }
 
-// ── Resolve expanded URL from user entities ───────────────────────────────────
+// ── Resolve expanded URL ──────────────────────────────────────────────────────
 
 function resolveUrl(user: TwitterUser): string | null {
   const urlEntries  = user.entities?.url?.urls ?? []
@@ -100,7 +109,7 @@ async function getEmailsFromTweets(username: string, apiKey: string): Promise<st
   }
 }
 
-// ── Fetch linked website and scan for email ───────────────────────────────────
+// ── Fetch linked website ──────────────────────────────────────────────────────
 
 const SKIP_DOMAINS = [
   'twitter.com', 'x.com', 'instagram.com', 'facebook.com',
@@ -120,7 +129,6 @@ async function getEmailFromWebsite(url: string): Promise<string | null> {
     const html  = await res.text()
     const email = firstEmail(html)
     if (email) return email
-    // Try /contact subpage
     try {
       const base = new URL(url)
       const res2 = await fetch(`${base.origin}/contact`, {
@@ -198,14 +206,16 @@ function parseJSON(raw: string): any {
 }
 
 async function analyzeFollowers(
-  profiles: RawFollowerProfile[],
-  ecoMeta:  ReturnType<typeof parseEcosystem>,
-  apiKey:   string,
+  profiles:  RawFollowerProfile[],
+  ecoMeta:   ReturnType<typeof parseEcosystem>,
+  apiKey:    string,
+  emit:      (e: ProgressEvent) => void,
 ): Promise<any[]> {
   if (!profiles.length) return []
 
-  const BATCH = 10
+  const BATCH   = 10
   const results: any[] = []
+  const total   = Math.ceil(profiles.length / BATCH)
 
   const { displayName, isTicker, ticker, tickerClean } = ecoMeta
 
@@ -218,7 +228,15 @@ async function analyzeFollowers(
     : displayName
 
   for (let i = 0; i < profiles.length; i += BATCH) {
+    const batchNum     = Math.floor(i / BATCH) + 1
     const profileBatch = profiles.slice(i, i + BATCH)
+
+    emit({
+      type:    'progress',
+      current: batchNum,
+      total,
+      label:   `Analysing batch ${batchNum} of ${total} with Claude…`,
+    })
 
     const prompt = [
       `You are analyzing real Twitter followers of a ${ecosystemDesc} account.`,
@@ -284,107 +302,162 @@ async function analyzeFollowers(
   })
 }
 
-// ── Main route ────────────────────────────────────────────────────────────────
+// ── Main route — SSE ──────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  try {
-    const { username, ecosystem = 'Crypto', maxFollowers = 200 } = await req.json()
+  const {
+    username,
+    ecosystem    = 'Crypto',
+    maxFollowers = 200,
+    startCursor  = null,   // <-- pagination: cursor from previous scrape's meta
+  } = await req.json()
 
-    if (!username?.trim()) {
-      return NextResponse.json({ error: 'username is required' }, { status: 400 })
-    }
-
-    const twitterKey = process.env.TWITTER_API_KEY
-    if (!twitterKey) {
-      return NextResponse.json({ error: 'TWITTER_API_KEY not set in .env' }, { status: 500 })
-    }
-
-    const anthropicKey = process.env.ANTHROPIC_API_KEY
-    if (!anthropicKey) {
-      return NextResponse.json({ error: 'ANTHROPIC_API_KEY not set in .env' }, { status: 500 })
-    }
-
-    const ecoMeta = parseEcosystem(ecosystem)
-    console.log(`[followers] Scraping @${username}, ecosystem: ${ecoMeta.displayName}, ticker: ${ecoMeta.isTicker}`)
-
-    // Step 1: Paginate followers
-    const allUsers:  TwitterUser[] = []
-    let cursor:      string | null  = null
-    let pageCount    = 0
-    const maxPages   = Math.ceil(maxFollowers / 200)
-
-    while (pageCount < maxPages) {
-      try {
-        const page = await getFollowersPage(username, cursor, twitterKey)
-        allUsers.push(...page.users)
-        console.log(`[followers] Page ${pageCount + 1}: +${page.users.length} (total: ${allUsers.length})`)
-        if (!page.hasNextPage || !page.nextCursor) break
-        cursor = page.nextCursor
-        pageCount++
-        await sleep(500)
-      } catch (e: any) {
-        console.warn('[followers] Pagination stopped:', e.message)
-        break
-      }
-    }
-
-    if (allUsers.length === 0) {
-      return NextResponse.json(
-        { error: `No followers found for @${username}. Check the username is correct.` },
-        { status: 404 },
-      )
-    }
-
-    // Step 2: Pre-filter — only drop completely empty accounts (no bio AND no url)
-    // We don't filter by follower count here — Claude handles high-profile exclusion
-    // This is important for large accounts like cz_binance whose followers include
-    // many legitimate mid-size accounts that would be wrongly excluded by a 10K cap
-    const candidates = allUsers.filter(u => {
-      const bio = getBioText(u)
-      const url = resolveUrl(u)
-      // Keep anyone with ANY signal — bio text OR a linked URL
-      return bio.length > 3 || url !== null
-    })
-
-    console.log(`[followers] After pre-filter: ${candidates.length} candidates`)
-
-    // Step 3: Process candidates in concurrent chunks of 5
-    const rawProfiles: RawFollowerProfile[] = []
-    const CONCURRENCY = 5
-
-    for (let i = 0; i < candidates.length; i += CONCURRENCY) {
-      const chunk   = candidates.slice(i, i + CONCURRENCY)
-      const settled = await Promise.allSettled(chunk.map(u => processFollower(u, twitterKey)))
-      for (const r of settled) {
-        if (r.status === 'fulfilled') rawProfiles.push(r.value)
-      }
-      await sleep(400)
-    }
-
-    const withEmail = rawProfiles.filter(p => p.email)
-    console.log(`[followers] Processed ${rawProfiles.length} profiles, ${withEmail.length} with email`)
-
-    // Step 4: Claude analysis
-    const prospects = await analyzeFollowers(rawProfiles, ecoMeta, anthropicKey)
-    console.log(`[followers] Final prospects: ${prospects.length}`)
-
-    return NextResponse.json({
-      results: prospects,
-      meta: {
-        targetAccount:    username,
-        ecosystem:        ecoMeta.displayName,
-        followersScraped: allUsers.length,
-        candidatesFound:  candidates.length,
-        withEmail:        withEmail.length,
-        finalProspects:   prospects.length,
-      },
-    })
-
-  } catch (error: any) {
-    console.error('[followers] Route error:', error)
-    return NextResponse.json(
-      { error: error.message ?? 'Follower scrape failed' },
-      { status: 500 },
-    )
+  if (!username?.trim()) {
+    return new Response(JSON.stringify({ error: 'username is required' }), { status: 400 })
   }
+
+  const twitterKey   = process.env.TWITTER_API_KEY
+  const anthropicKey = process.env.ANTHROPIC_API_KEY
+
+  if (!twitterKey)   return new Response(JSON.stringify({ error: 'TWITTER_API_KEY not set' }), { status: 500 })
+  if (!anthropicKey) return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not set' }), { status: 500 })
+
+  const ecoMeta = parseEcosystem(ecosystem)
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emit = (event: ProgressEvent) => {
+        try { controller.enqueue(encode(event)) } catch {}
+      }
+
+      try {
+        // ── Stage 1: Paginate followers ───────────────────────────────────────
+        const isContinuation = startCursor !== null
+        emit({
+          type:   'stage',
+          stage:  'Fetching followers…',
+          detail: isContinuation ? `@${username} — continuing from page 2+` : `@${username}`,
+        })
+
+        const allUsers:  TwitterUser[] = []
+        let   cursor:    string | null = startCursor  // start from where last scrape left off
+        let   pageCount  = 0
+        const maxPages   = Math.ceil(maxFollowers / 100)
+        let   lastCursor: string | null = null         // track final cursor for next scrape
+
+        while (pageCount < maxPages) {
+          try {
+            const page = await getFollowersPage(username, cursor, twitterKey)
+            allUsers.push(...page.users)
+            emit({
+              type:    'progress',
+              current: allUsers.length,
+              total:   maxFollowers,
+              label:   `Fetched ${allUsers.length} of ~${maxFollowers} followers…`,
+            })
+            // Save the cursor so meta can return it for the next "scrape again"
+            if (page.nextCursor) lastCursor = page.nextCursor
+            if (!page.hasNextPage || !page.nextCursor) break
+            cursor = page.nextCursor
+            pageCount++
+            await sleep(500)
+          } catch (e: any) {
+            console.warn('[followers] Pagination stopped:', e.message)
+            break
+          }
+        }
+
+        if (allUsers.length === 0) {
+          emit({ type: 'error', message: `No followers found for @${username}. Check the username is correct.` })
+          controller.close()
+          return
+        }
+
+        // ── Stage 2: Pre-filter ───────────────────────────────────────────────
+        emit({ type: 'stage', stage: 'Filtering candidates…' })
+
+        const candidates = allUsers.filter(u => {
+          if (isHighProfile(u.description ?? '', u.followers_count)) return false
+          const bio = getBioText(u)
+          const url = resolveUrl(u)
+          return bio.length > 5 || url !== null
+        })
+
+        emit({
+          type:    'progress',
+          current: candidates.length,
+          total:   allUsers.length,
+          label:   `${candidates.length} candidates from ${allUsers.length} followers`,
+        })
+
+        // ── Stage 3: Process candidates ───────────────────────────────────────
+        emit({
+          type:   'stage',
+          stage:  'Scanning bios, tweets & websites for emails…',
+          detail: `${candidates.length} accounts`,
+        })
+
+        const rawProfiles: RawFollowerProfile[] = []
+        const CONCURRENCY = 5
+        let   processed   = 0
+
+        for (let i = 0; i < candidates.length; i += CONCURRENCY) {
+          const chunk   = candidates.slice(i, i + CONCURRENCY)
+          const settled = await Promise.allSettled(chunk.map(u => processFollower(u, twitterKey)))
+          for (const r of settled) {
+            if (r.status === 'fulfilled') rawProfiles.push(r.value)
+          }
+          processed += chunk.length
+          emit({
+            type:    'progress',
+            current: Math.min(processed, candidates.length),
+            total:   candidates.length,
+            label:   `Scanned ${Math.min(processed, candidates.length)} of ${candidates.length} accounts…`,
+          })
+          await sleep(400)
+        }
+
+        const withEmail = rawProfiles.filter(p => p.email)
+
+        emit({
+          type:   'stage',
+          stage:  'Running Claude analysis…',
+          detail: `${rawProfiles.length} profiles · ${withEmail.length} with email`,
+        })
+
+        // ── Stage 4: Claude analysis ──────────────────────────────────────────
+        const prospects = await analyzeFollowers(rawProfiles, ecoMeta, anthropicKey, emit)
+
+        // ── Done — include nextCursor so client can pass it back ──────────────
+        emit({
+          type:    'done',
+          results: prospects,
+          meta: {
+            targetAccount:    username,
+            ecosystem:        ecoMeta.displayName,
+            followersScraped: allUsers.length,
+            candidatesFound:  candidates.length,
+            withEmail:        withEmail.length,
+            finalProspects:   prospects.length,
+            isContinuation,
+            // Pass this back to the client — on "Scrape again" it becomes startCursor
+            nextCursor:       lastCursor,
+          },
+        })
+      } catch (error: any) {
+        console.error('[followers] Stream error:', error)
+        emit({ type: 'error', message: error.message ?? 'Scrape failed' })
+      } finally {
+        controller.close()
+      }
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type':  'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection':    'keep-alive',
+    },
+  })
 }
