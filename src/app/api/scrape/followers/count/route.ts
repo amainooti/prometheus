@@ -29,14 +29,22 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: `Twitter API error ${res.status}` }, { status: 502 })
     }
 
-    const data = await res.json()
-    // twitterapi.io wraps the user object differently depending on endpoint version
-    const user = data.data ?? data.user ?? data
+    const body = await res.json()
+
+    // twitterapi.io /twitter/user/info returns { data: { followers, name, userName, ... }, status }
+    // Field is `followers` not `followers_count`
+    const user = body.data ?? body.user ?? body
+
+    const followersCount =
+      user.followers        ??   // twitterapi.io /user/info
+      user.followers_count  ??   // legacy fallback
+      user.followersCount   ??   // just in case
+      0
 
     return NextResponse.json({
-      username:       user.screen_name ?? username,
+      username:       user.userName    ?? user.screen_name ?? username,
       displayName:    user.name        ?? username,
-      followersCount: user.followers_count ?? 0,
+      followersCount,
     })
   } catch (e: any) {
     console.error('[followers/count] Error:', e.message)

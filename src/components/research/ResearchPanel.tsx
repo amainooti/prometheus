@@ -745,7 +745,7 @@ export function ResearchPanel() {
   const [followerError,       setFollowerError]       = useState('')
   const [followerSavedIdx,    setFollowerSavedIdx]    = useState<Set<number>>(new Set())
   const [followerSavingAll,   setFollowerSavingAll]   = useState(false)
-  const [followerSaveResult,  setFollowerSaveResult]  = useState<{ created: number; skipped: number } | null>(null)
+  const [followerSaveResult,  setfollowerSaveResult]  = useState<{ created: number; skipped: number } | null>(null)
   const [followerMeta,        setFollowerMeta]        = useState<any>(null)
   // Cursor returned by the last scrape — passed as startCursor on "Scrape next page"
   const [followerNextCursor,  setFollowerNextCursor]  = useState<string | null>(null)
@@ -920,7 +920,7 @@ export function ResearchPanel() {
     if (!isContinuation) {
       setFollowerProspects([])
       setFollowerSavedIdx(new Set())
-      setFollowerSaveResult(null)
+      setfollowerSaveResult(null)
       setFollowerMeta(null)
       setFollowerNextCursor(null)
     }
@@ -980,12 +980,18 @@ export function ResearchPanel() {
               const newDupes   = await checkDuplicates(newResults)
 
               if (isContinuation) {
-                // Append and offset the dupe indexes by the size of the existing list
                 setFollowerProspects(prev => {
-                  const offset     = prev.length
+                  // Strip anyone already shown — by Twitter URL or name
+                  const existingUrls  = new Set(prev.map(p => p.twitterUrl?.toLowerCase()).filter(Boolean))
+                  const existingNames = new Set(prev.map(p => p.name.toLowerCase().trim()))
+                  const deduped = newResults.filter((p: Prospect) =>
+                    !existingUrls.has(p.twitterUrl?.toLowerCase() ?? '') &&
+                    !existingNames.has(p.name.toLowerCase().trim())
+                  )
+                  const offset      = prev.length
                   const offsetDupes = new Set([...newDupes].map(i => i + offset))
                   setFollowerSavedIdx(existing => new Set([...existing, ...offsetDupes]))
-                  return [...prev, ...newResults]
+                  return [...prev, ...deduped]
                 })
               } else {
                 setFollowerProspects(newResults)
@@ -1010,7 +1016,7 @@ export function ResearchPanel() {
 
   const handleFollowerSaveAll = async () => {
     if (!followerProspects.length) return
-    setFollowerSavingAll(true); setFollowerSaveResult(null)
+    setFollowerSavingAll(true); setfollowerSaveResult(null)
     let created = 0, skipped = 0
     const newSaved = new Set(followerSavedIdx)
     for (let i = 0; i < followerProspects.length; i++) {
@@ -1021,7 +1027,7 @@ export function ResearchPanel() {
       })
       if (res.status === 201) { created++; newSaved.add(i) } else skipped++
     }
-    setFollowerSavedIdx(newSaved); setFollowerSaveResult({ created, skipped }); setFollowerSavingAll(false)
+    setFollowerSavedIdx(newSaved); setfollowerSaveResult({ created, skipped }); setFollowerSavingAll(false)
   }
 
   const saveFollowerLead = async (p: Prospect, index?: number) => {
