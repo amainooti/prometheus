@@ -927,16 +927,22 @@ export function ResearchPanel() {
     setScrapeProgress({ stage: 'Starting…', detail: '', current: 0, total: 0, label: 'Connecting…' })
 
     try {
-      const res = await fetch('/api/scrape/followers', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          username:     followerUsername.replace('@', '').trim(),
-          ecosystem:    followerEcosystem,
-          maxFollowers: followerMaxCount,
-          startCursor,
-        }),
-      })
+    const scraperUrl    = process.env.NEXT_PUBLIC_SCRAPER_URL
+    const scraperSecret = process.env.NEXT_PUBLIC_SCRAPER_SECRET
+
+    const res = await fetch(`${scraperUrl}/scrape/followers`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':     'application/json',
+        'X-Scraper-Secret': scraperSecret ?? '',
+      },
+      body: JSON.stringify({
+        username:     followerUsername.replace('@', '').trim(),
+        ecosystem:    followerEcosystem,
+        maxFollowers: followerMaxCount,
+        startCursor,
+      }),
+    })
 
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}))
