@@ -1,188 +1,94 @@
 // ─── reddit.ts ────────────────────────────────────────────────────────────────
-// Reddit OAuth2 API client. Searches ecosystem-relevant subreddits,
-// pulls post/comment authors, then fetches their public profile data.
-// Completely free — requires a Reddit app credential (2 min setup).
+// Calls the VPS scraper service via SSE stream.
+// Profiles arrive one by one as the VPS finds them — no timeout issues.
 //
-// Setup: https://www.reddit.com/prefs/apps → "create another app" → script type
-// Add to .env:
-//   REDDIT_CLIENT_ID=your_client_id
-//   REDDIT_CLIENT_SECRET=your_client_secret
+// Required env vars (.env.local + Vercel):
+//   REDDIT_SCRAPER_URL    = http://153.75.91.144:8000
+//   REDDIT_SCRAPER_SECRET = your secret
 
-import { RawProfile, firstEmail, sleep } from '@/lib/scrapperUtils'
+import { RawProfile } from '@/lib/scrapperUtils'
 
-// ── Subreddit map per ecosystem ───────────────────────────────────────────────
-const ECOSYSTEM_SUBREDDITS: Record<string, string[]> = {
-  Bitcoin:   ['Bitcoin', 'btc', 'BitcoinBeginners', 'CryptoTechnology'],
-  Ethereum:  ['ethereum', 'ethfinance', 'ethdev', 'defi'],
-  Solana:    ['solana', 'SolanaGamers', 'solanaNFT'],
-  Base:      ['Base', 'basechain', 'defi'],
-  Arbitrum:  ['Arbitrum', 'defi'],
-  Optimism:  ['optimismCollective', 'defi'],
-  Cosmos:    ['cosmosnetwork', 'cosmosDB'],
-  Sui:       ['SuiNetwork', 'sui_crypto'],
-  Aptos:     ['Aptos'],
-  Polygon:   ['0xPolygon', 'maticnetwork'],
-  Avalanche: ['Avax', 'Avalanche'],
-  TON:       ['Toncoin', 'TONcrypto'],
-  // Fallback for any unknown ecosystem
-  default:   ['CryptoCurrency', 'CryptoMarkets', 'defi', 'crypto_com'],
-}
-
-// ── Reddit OAuth token (cached in memory for the process lifetime) ────────────
-let _token: string | null = null
-let _tokenExpiry = 0
-
-async function getToken(): Promise<string> {
-  if (_token && Date.now() < _tokenExpiry) return _token
-
-  const clientId     = process.env.REDDIT_CLIENT_ID
-  const clientSecret = process.env.REDDIT_CLIENT_SECRET
-
-  if (!clientId || !clientSecret) {
-    throw new Error('REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET must be set in .env')
-  }
-
-  const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
-
-  const res = await fetch('https://www.reddit.com/api/v1/access_token', {
-    method: 'POST',
-    headers: {
-      Authorization:  `Basic ${creds}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent':   'CryptoLeadsCRM/1.0',
-    },
-    body: 'grant_type=client_credentials',
-  })
-
-  if (!res.ok) throw new Error(`Reddit auth failed: ${res.status}`)
-  const data = await res.json()
-  _token       = data.access_token
-  _tokenExpiry = Date.now() + (data.expires_in - 60) * 1000
-  return _token!
-}
-
-// ── Authenticated Reddit fetch ────────────────────────────────────────────────
-async function redditFetch(path: string): Promise<any> {
-  const token = await getToken()
-  const res = await fetch(`https://oauth.reddit.com${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'User-Agent':  'CryptoLeadsCRM/1.0',
-    },
-  })
-  if (res.status === 429) throw new Error('Reddit rate limited')
-  if (!res.ok) throw new Error(`Reddit API error: ${res.status}`)
-  return res.json()
-}
-
-// ── Fetch a user's public profile ─────────────────────────────────────────────
-async function fetchUserProfile(username: string): Promise<{
-  bio: string
-  websiteUrl: string | null
-  followerCount: number
-} | null> {
-  try {
-    await sleep(300) // be polite
-    const data = await redditFetch(`/user/${username}/about.json`)
-    const subreddit = data?.data?.subreddit
-    const bio       = subreddit?.public_description ?? ''
-    // Reddit doesn't expose personal websites directly in the API,
-    // but the public_description often contains them or emails.
-    return {
-      bio,
-      websiteUrl:    null,
-      followerCount: subreddit?.subscribers ?? 0,
-    }
-  } catch {
-    return null
-  }
-}
-
-// ── Search a subreddit for posts matching a query ─────────────────────────────
-async function searchSubreddit(
-  subreddit: string,
-  query: string,
-  limit = 25,
-): Promise<Array<{ author: string; title: string; selftext: string; url: string }>> {
-  try {
-    const params = new URLSearchParams({
-      q:    query,
-      sort: 'relevance',
-      t:    'year',
-      limit: String(limit),
-    })
-    const data = await redditFetch(`/r/${subreddit}/search.json?${params}`)
-    return (data?.data?.children ?? []).map((c: any) => ({
-      author:   c.data.author,
-      title:    c.data.title,
-      selftext: c.data.selftext ?? '',
-      url:      `https://reddit.com${c.data.permalink}`,
-    }))
-  } catch {
-    return []
-  }
-}
-
-// ── Main export: scrape Reddit for profiles matching ecosystem + criteria ──────
 export async function scrapeReddit(params: {
   ecosystem:    string
   beliefSignal: string
   niches:       string[]
   roles:        string[]
   maxProfiles?: number
-}): Promise<RawProfile[]> {
-  const { ecosystem, beliefSignal, niches, roles, maxProfiles = 60 } = params
+}): Promise<RawProfile[]>  {
+  const url    = process.env.REDDIT_SCRAPER_URL?.replace(/\/$/, '')
+  const secret = process.env.REDDIT_SCRAPER_SECRET
 
-  const subreddits = ECOSYSTEM_SUBREDDITS[ecosystem] ?? ECOSYSTEM_SUBREDDITS.default
-
-  // Build search queries from criteria
-  const queries = [
-    beliefSignal || `${ecosystem} holder`,
-    niches.length  ? `${niches[0]} ${ecosystem}`       : `${ecosystem} staking`,
-    roles.length   ? `${roles[0].toLowerCase()} ${ecosystem}` : `${ecosystem} community`,
-    `${ecosystem} buy dip`,
-    `${ecosystem} portfolio`,
-  ].slice(0, 3) // max 3 queries to stay within rate limits
-
-  const seen    = new Set<string>()
-  const profiles: RawProfile[] = []
-
-  for (const subreddit of subreddits.slice(0, 3)) {
-    for (const query of queries) {
-      if (profiles.length >= maxProfiles) break
-
-      const posts = await searchSubreddit(subreddit, query, 20)
-      await sleep(500)
-
-      for (const post of posts) {
-        if (profiles.length >= maxProfiles) break
-        if (!post.author || post.author === '[deleted]' || seen.has(post.author)) continue
-        seen.add(post.author)
-
-        const userInfo = await fetchUserProfile(post.author)
-        if (!userInfo) continue
-
-        // Extract any email visible in bio
-        const emailInBio = firstEmail(userInfo.bio)
-
-        profiles.push({
-          source:        'reddit',
-          username:      post.author,
-          displayName:   post.author,
-          profileUrl:    `https://reddit.com/u/${post.author}`,
-          bio:           userInfo.bio,
-          websiteUrl:    userInfo.websiteUrl,
-          email:         emailInBio,
-          emailSource:   emailInBio ? 'Reddit profile bio' : null,
-          postContent:   `${post.title} — ${post.selftext}`.slice(0, 500),
-          ecosystem,
-          followerCount: userInfo.followerCount,
-        })
-      }
-
-      await sleep(800) // rate limit between queries
-    }
+  if (!url || !secret) {
+    throw new Error('REDDIT_SCRAPER_URL and REDDIT_SCRAPER_SECRET must be set in .env.local')
   }
 
+  const endpoint = `${url}/scrape/reddit/stream`
+  console.log(`[reddit] Connecting to SSE stream: ${endpoint}`)
+
+  const res = await fetch(endpoint, {
+    method:  'POST',
+    headers: {
+      'Content-Type':     'application/json',
+      'X-Scraper-Secret': secret,
+    },
+    body: JSON.stringify({
+      ecosystem:    params.ecosystem,
+      beliefSignal: params.beliefSignal,
+      niches:       params.niches,
+      roles:        params.roles,
+      maxProfiles:  params.maxProfiles ?? 60,
+    }),
+    signal: AbortSignal.timeout(15 * 60 * 1000), // 15 min hard ceiling
+  })
+
+  if (res.status === 401) {
+    throw new Error('[reddit] VPS rejected request — check REDDIT_SCRAPER_SECRET')
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`[reddit] VPS returned ${res.status}: ${body}`)
+  }
+  if (!res.body) {
+    throw new Error('[reddit] No response body from VPS stream')
+  }
+
+  const profiles: RawProfile[] = []
+  const reader  = res.body.getReader()
+  const decoder = new TextDecoder()
+  let   buffer  = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed === 'event: done') continue
+        if (trimmed.startsWith('data: ')) {
+          const raw = trimmed.slice(6)
+          try {
+            const parsed = JSON.parse(raw)
+            if ('total' in parsed) {
+              console.log(`[reddit] Stream complete — ${parsed.total} profiles in ${parsed.elapsed}s`)
+              break
+            }
+            profiles.push(parsed as RawProfile)
+            console.log(`[reddit] Received profile ${profiles.length}: ${parsed.username}`)
+          } catch {
+            // malformed line — skip
+          }
+        }
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {})
+  }
+
+  console.log(`[reddit] Total collected: ${profiles.length}`)
   return profiles
 }

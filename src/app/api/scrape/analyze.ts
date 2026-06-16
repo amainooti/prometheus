@@ -4,7 +4,7 @@
 // Claude's job here is NOT to find people — the scrapers already did that.
 // Claude's job is to:
 //   1. Score each profile for holder/believer conviction
-//   2. Hunt for emails in linked websites, GitHub, etc.
+//   2. Hunt for emails via web search on each username
 //   3. Filter out high-profile / irrelevant accounts
 //   4. Assign priority, confidence, tags, and belief signal summary
 //   5. Return the final structured prospect shape
@@ -35,40 +35,72 @@ function parseJSON(raw: string): any {
 }
 
 // ── Batch size: analyze N profiles per Claude call ────────────────────────────
-const BATCH_SIZE = 8
+// Smaller batches = more focused web searches per person = better email hits
+const BATCH_SIZE = 5
 
 // ── Build the analysis prompt for a batch of profiles ────────────────────────
 function buildAnalysisPrompt(profiles: ReturnType<typeof normalizeProfile>[], ecosystem: string): string {
   const profilesJson = JSON.stringify(profiles, null, 2)
 
   return `You are analyzing real scraped user profiles from Reddit, Quora, and Bitcointalk forums.
-Your job is to filter and enrich these profiles into CRM-ready crypto prospects.
+Your job is to filter, enrich, and find emails for these profiles to create CRM-ready crypto prospects.
 
 Target ecosystem: ${ecosystem}
 
-For each profile:
-1. Determine if this is a genuine retail holder / community member (KEEP) or a high-profile/famous person (SKIP)
-2. If they have a websiteUrl, search it for an email address
-3. If they mention GitHub, search their GitHub bio/README for an email
-4. Score their conviction level based on bio + post content
-5. Assign priority (A/B/C), confidence (HIGH/MEDIUM/LOW), and tags
-
+═══════════════════════════════════════════════
+STEP 1 — FILTER
+═══════════════════════════════════════════════
 SKIP profiles where:
 - They appear to be founders, CEOs, protocol leads, or foundation employees
-- They have >10K followers
-- Their bio is empty and post content shows no crypto conviction
+- They have >10K followers/karma
+- Bio is empty AND post content shows no crypto conviction
+- Username looks like a bot or throwaway (random numbers/letters only)
 
 KEEP profiles where:
 - Bio or posts mention holding, staking, accumulating, DeFi usage, wallet activity
-- They show ecosystem loyalty or "maxi" signals
+- They show ecosystem loyalty or conviction signals
 - They are clearly retail/community level
 
-For email: use what the scraper found, OR search their websiteUrl/GitHub link if present.
-If no email can be found, set email to null — do NOT invent one.
+═══════════════════════════════════════════════
+STEP 2 — EMAIL HUNTING (most important step)
+═══════════════════════════════════════════════
+For EVERY profile you decide to KEEP, you MUST run web searches to find their email.
+Search in this order until you find one:
 
+1. Search: "{username}" site:github.com
+   → Visit their GitHub profile page — check bio and README for email
+
+2. Search: "{username}" reddit email contact
+   → Look for any linked personal site or contact page
+
+3. Search: "{username}" site:twitter.com OR site:x.com
+   → Check their Twitter/X bio for email
+
+4. If they have a websiteUrl — visit it and check /contact or /about page
+
+5. Search: "{displayName}" email crypto
+   → Sometimes their real name leads to a personal site with email
+
+Only set email if you find a REAL, CONFIRMED public email address.
+Do NOT guess or invent emails.
+Do NOT use corporate/foundation emails (@ethereum.org, @solana.com etc.)
+If no email found after searching, set email: null
+
+═══════════════════════════════════════════════
+STEP 3 — ENRICH & SCORE
+═══════════════════════════════════════════════
+For each kept profile:
+- Set their redditUrl using their profileUrl
+- Find their twitterUrl if discoverable via web search
+- Find their githubUrl if discoverable
+- Score conviction: HIGH = active holder signals, MEDIUM = general crypto interest, LOW = vague
+- Assign priority: A = email found + strong conviction, B = email found + moderate, C = no email
+
+═══════════════════════════════════════════════
+OUTPUT
+═══════════════════════════════════════════════
 Return ONLY a raw JSON array. No text before or after. Start with [ end with ].
 
-Output schema for each kept profile:
 [{
   "name": "",
   "role": "Community Member",
@@ -110,7 +142,7 @@ async function callClaude(apiKey: string, prompt: string): Promise<any> {
       },
       body: JSON.stringify({
         model:      'claude-haiku-4-5',
-        max_tokens: 4000,
+        max_tokens: 8000,
         tools:      [{ type: 'web_search_20250305', name: 'web_search' }],
         messages:   [{ role: 'user', content: prompt }],
       }),
