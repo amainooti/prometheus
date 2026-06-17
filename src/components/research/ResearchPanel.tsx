@@ -128,8 +128,8 @@ async function checkDuplicates(prospects: Prospect[]): Promise<Set<number>> {
     const emailSet = new Set<string>(emails)
     const dupes    = new Set<number>()
     prospects.forEach((p, i) => {
-      if (nameSet.has(p.name.toLowerCase().trim()))         dupes.add(i)
-      if (p.email && emailSet.has(p.email.toLowerCase()))  dupes.add(i)
+      if (nameSet.has(p.name.toLowerCase().trim()))        dupes.add(i)
+      if (p.email && emailSet.has(p.email.toLowerCase())) dupes.add(i)
     })
     return dupes
   } catch {
@@ -299,7 +299,6 @@ function ProspectCard({ prospect, index, alreadySaved, onSave }: {
   const [saved,    setSaved]    = useState(alreadySaved ?? false)
   const [expanded, setExpanded] = useState(false)
 
-  // Sync if parent marks it saved after dedup
   useEffect(() => { if (alreadySaved) setSaved(true) }, [alreadySaved])
 
   const handle = async () => {
@@ -480,25 +479,24 @@ function ProspectResultsBlock({
   prospects, savedIndexes, savingAll, saveAllResult,
   onSaveAll, onExportCSV, onSaveOne, onResearch, researchLabel, onSavedIndexesChange,
 }: {
-  prospects:    Prospect[]
-  savedIndexes: Set<number>
-  savingAll:    boolean
+  prospects:     Prospect[]
+  savedIndexes:  Set<number>
+  savingAll:     boolean
   saveAllResult: { created: number; skipped: number } | null
-  onSaveAll:    () => void
-  onExportCSV:  () => void
-  onSaveOne:    (p: Prospect, i?: number) => Promise<void>
-  onResearch?:  () => void
+  onSaveAll:     () => void
+  onExportCSV:   () => void
+  onSaveOne:     (p: Prospect, i?: number) => Promise<void>
+  onResearch?:   () => void
   researchLabel?: string
   onSavedIndexesChange: (indexes: Set<number>) => void
 }) {
-  const withEmail     = prospects.filter(p => p.email).length
-  const withoutEmail  = prospects.length - withEmail
-  const alreadyInCRM  = savedIndexes.size
-  const newProspects  = prospects.length - alreadyInCRM
+  const withEmail    = prospects.filter(p => p.email).length
+  const withoutEmail = prospects.length - withEmail
+  const alreadyInCRM = savedIndexes.size
+  const newProspects = prospects.length - alreadyInCRM
 
   return (
     <div className="space-y-3">
-      {/* Summary */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="space-y-0.5">
           <p className="text-sm font-semibold">
@@ -540,7 +538,6 @@ function ProspectResultsBlock({
         </div>
       </div>
 
-      {/* Add with email button */}
       <AddWithEmailButton
         prospects={prospects}
         savedIndexes={savedIndexes}
@@ -575,8 +572,8 @@ function ScrapeProgressBar({ username, progress }: { username: string; progress:
     ? Math.min(100, Math.round((progress.current / progress.total) * 100))
     : 0
 
-  const stages    = ['Fetching', 'Filtering', 'Scanning', 'Analysing']
-  const stageKeys = ['Fetch', 'Filter', 'Scan', 'Analys']
+  // Two stages: Fetch → Scan
+  const stageKeys = ['Fetch', 'Scan']
   const activeStage = stageKeys.findIndex(k =>
     progress.stage.toLowerCase().startsWith(k.toLowerCase())
   )
@@ -610,12 +607,10 @@ function ScrapeProgressBar({ username, progress }: { username: string; progress:
         />
       </div>
 
-      <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-2 gap-1">
         {[
-          { label: 'Fetch',   icon: '📥' },
-          { label: 'Filter',  icon: '🔍' },
-          { label: 'Scan',    icon: '✉️' },
-          { label: 'Analyse', icon: '🤖' },
+          { label: 'Fetch', icon: '📥' },
+          { label: 'Scan',  icon: '✉️' },
         ].map((s, i) => {
           const done   = i < activeStage
           const active = i === activeStage
@@ -747,7 +742,6 @@ export function ResearchPanel() {
   const [followerSavingAll,   setFollowerSavingAll]   = useState(false)
   const [followerSaveResult,  setfollowerSaveResult]  = useState<{ created: number; skipped: number } | null>(null)
   const [followerMeta,        setFollowerMeta]        = useState<any>(null)
-  // Cursor returned by the last scrape — passed as startCursor on "Scrape next page"
   const [followerNextCursor,  setFollowerNextCursor]  = useState<string | null>(null)
   const [scrapeProgress,      setScrapeProgress]      = useState<ScrapeProgress>({
     stage: '', detail: '', current: 0, total: 0, label: '',
@@ -782,7 +776,6 @@ export function ResearchPanel() {
         if (res.ok && typeof data.followersCount === 'number') {
           setFollowerCount(data.followersCount)
           setFollowerCountStatus('ok')
-          // Clamp selection to available options
           const opts = getScanOptions(data.followersCount)
           if (!opts.includes(followerMaxCount)) {
             const best = opts.filter(o => o <= followerMaxCount).pop() ?? opts[opts.length - 1]
@@ -801,7 +794,6 @@ export function ResearchPanel() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followerUsername])
 
-  // Derived scan options
   const scanOptions =
     followerCountStatus === 'ok' && followerCount !== null
       ? getScanOptions(followerCount)
@@ -908,15 +900,12 @@ export function ResearchPanel() {
   }
 
   // ── Follower scrape — SSE ──────────────────────────────────────────────────
-  // startCursor=null → fresh scrape from page 1
-  // startCursor=<cursor> → continue from where last scrape left off
 
   const handleFollowerScrape = async (startCursor: string | null = null) => {
     if (!followerUsername.trim()) return
     const isContinuation = startCursor !== null
 
     setFollowerScraping(true); setFollowerError('')
-    // On fresh scrape clear everything; on continuation keep existing results visible until done
     if (!isContinuation) {
       setFollowerProspects([])
       setFollowerSavedIdx(new Set())
@@ -927,22 +916,22 @@ export function ResearchPanel() {
     setScrapeProgress({ stage: 'Starting…', detail: '', current: 0, total: 0, label: 'Connecting…' })
 
     try {
-    const scraperUrl    = process.env.NEXT_PUBLIC_SCRAPER_URL
-    const scraperSecret = process.env.NEXT_PUBLIC_SCRAPER_SECRET
+      const scraperUrl    = process.env.NEXT_PUBLIC_SCRAPER_URL
+      const scraperSecret = process.env.NEXT_PUBLIC_SCRAPER_SECRET
 
-    const res = await fetch(`${scraperUrl}/scrape/followers`, {
-      method:  'POST',
-      headers: {
-        'Content-Type':     'application/json',
-        'X-Scraper-Secret': scraperSecret ?? '',
-      },
-      body: JSON.stringify({
-        username:     followerUsername.replace('@', '').trim(),
-        ecosystem:    followerEcosystem,
-        maxFollowers: followerMaxCount,
-        startCursor,
-      }),
-    })
+      const res = await fetch(`${scraperUrl}/scrape/followers`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':     'application/json',
+          'X-Scraper-Secret': scraperSecret ?? '',
+        },
+        body: JSON.stringify({
+          username:     followerUsername.replace('@', '').trim(),
+          ecosystem:    followerEcosystem,
+          maxFollowers: followerMaxCount,
+          startCursor,
+        }),
+      })
 
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}))
@@ -987,7 +976,6 @@ export function ResearchPanel() {
 
               if (isContinuation) {
                 setFollowerProspects(prev => {
-                  // Strip anyone already shown — by Twitter URL or name
                   const existingUrls  = new Set(prev.map(p => p.twitterUrl?.toLowerCase()).filter(Boolean))
                   const existingNames = new Set(prev.map(p => p.name.toLowerCase().trim()))
                   const deduped = newResults.filter((p: Prospect) =>
@@ -1239,7 +1227,7 @@ export function ResearchPanel() {
 
             <div className="bg-card border border-border rounded-lg p-4 space-y-4">
               <p className="text-xs text-muted-foreground">
-                Enter a Twitter account — we'll paginate through their followers, scan bios and tweets for emails, and surface qualified prospects.
+                Enter a Twitter account — we'll paginate through their followers, scan bios and linked websites for emails, and surface qualified prospects.
               </p>
 
               {/* Username */}
@@ -1317,7 +1305,7 @@ export function ResearchPanel() {
               </button>
 
               <p className="text-[10px] text-muted-foreground">
-                Cost: ~$0.018 per 100 followers scanned (twitterapi.io) + Claude analysis.
+                Cost: ~$0.00015 per follower profile (twitterapi.io). No AI analysis.
               </p>
             </div>
 
@@ -1336,9 +1324,8 @@ export function ResearchPanel() {
               <div className="space-y-2">
                 <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground bg-secondary/50 border border-border rounded-lg px-4 py-3">
                   <span>📥 <strong className="text-foreground">{followerMeta.followersScraped}</strong> scraped</span>
-                  <span>🔍 <strong className="text-foreground">{followerMeta.candidatesFound}</strong> candidates</span>
                   <span>✉️ <strong className="text-green-400">{followerMeta.withEmail}</strong> with email</span>
-                  <span>✅ <strong className="text-foreground">{followerMeta.finalProspects}</strong> qualified</span>
+                  <span>✅ <strong className="text-foreground">{followerMeta.finalProspects}</strong> saved</span>
                   {followerMeta.isContinuation && (
                     <span className="text-sky-400">· continued from previous page</span>
                   )}
