@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { PlusCircle, Download, Search, ChevronLeft, ChevronRight, Upload, ChevronDown, Loader2 } from 'lucide-react'
+import { PlusCircle, Download, Search, ChevronLeft, ChevronRight, Upload, ChevronDown, Loader2, Mail } from 'lucide-react'
 import Link from 'next/link'
 import { LeadTable } from '@/components/leads/LeadTable'
 import { LeadFilters, type ActiveFilters } from '@/components/leads/LeadFilters'
@@ -50,7 +50,6 @@ export default function LeadsPageClient() {
   const [ecoLoading,   setEcoLoading]   = useState(false)
   const dropdownRef                     = useRef<HTMLDivElement>(null)
 
-  // Fetch distinct ecosystems that actually exist in the DB
   useEffect(() => {
     const load = async () => {
       setEcoLoading(true)
@@ -67,7 +66,6 @@ export default function LeadsPageClient() {
     load()
   }, [])
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -110,6 +108,15 @@ export default function LeadsPageClient() {
     const params = buildParams()
     params.delete('page')
     params.delete('limit')
+    window.open(`/api/leads/export?${params}`, '_blank')
+    setEcoDropdown(false)
+  }
+
+  const handleExportEmailsOnly = () => {
+    const params = buildParams()
+    params.delete('page')
+    params.delete('limit')
+    params.set('emailsOnly', 'true')
     window.open(`/api/leads/export?${params}`, '_blank')
     setEcoDropdown(false)
   }
@@ -172,6 +179,14 @@ export default function LeadsPageClient() {
                   >
                     <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                     Filtered results
+                    <span className="ml-auto text-[10px] text-muted-foreground">{total}</span>
+                  </button>
+                  <button
+                    onClick={handleExportEmailsOnly}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium text-foreground hover:bg-secondary transition-colors text-left"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    Emails only
                     <span className="ml-auto text-[10px] text-muted-foreground">{total}</span>
                   </button>
                   <button

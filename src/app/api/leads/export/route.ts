@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
     const activity   = searchParams.getAll('activityLevel')
     const source     = searchParams.getAll('sourceFound')
     const verified   = searchParams.get('emailVerified')
-    // ecosystem can be sent multiple times (one per selected ecosystem)
     const ecosystems = searchParams.getAll('ecosystem')
+    const emailsOnly = searchParams.get('emailsOnly') === 'true'
 
     const where: Prisma.LeadWhereInput = {
       ...(search ? {
@@ -32,7 +32,6 @@ export async function GET(req: NextRequest) {
       ...(activity.length   ? { activityLevel:   { in: activity   as any[] } } : {}),
       ...(source.length     ? { sourceFound:     { in: source     as any[] } } : {}),
       ...(verified !== null && verified !== '' ? { emailVerified: verified === 'true' } : {}),
-      // Multiple ecosystems → OR across them (case-insensitive contains)
       ...(ecosystems.length ? {
         OR: ecosystems.map(eco => ({
           ecosystem: { contains: eco, mode: 'insensitive' as const },
@@ -45,18 +44,41 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    const headers = [
-      'name', 'role', 'company', 'ecosystem', 'linkedinUrl', 'twitterUrl', 'companyWebsite',
-      'cryptoNiche', 'beliefSignal', 'activityLevel', 'tags',
-      'email', 'emailSource', 'emailConfidence', 'emailVerified', 'emailType',
-      'priority', 'status', 'sourceFound', 'notes', 'createdAt',
-    ]
+    const ecoSuffix = ecosystems.length
+      ? `-${ecosystems.join('-').toLowerCase()}`
+      : ''
 
     const escape = (v: any) => {
       if (v === null || v === undefined) return ''
       const s = Array.isArray(v) ? v.join('; ') : String(v)
       return `"${s.replace(/"/g, '""')}"`
     }
+
+    // ── Emails-only export ──────────────────────────────────────────────────
+    if (emailsOnly) {
+      const rows = [
+        'email',
+        ...leads
+          .filter(l => l.email)
+          .map(l => escape(l.email)),
+      ].join('\n')
+
+      const filename = `emails${ecoSuffix}-${new Date().toISOString().slice(0, 10)}.csv`
+      return new NextResponse(rows, {
+        headers: {
+          'Content-Type': 'text/csv',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+        },
+      })
+    }
+
+    // ── Full export ─────────────────────────────────────────────────────────
+    const headers = [
+      'name', 'role', 'company', 'ecosystem', 'linkedinUrl', 'twitterUrl', 'companyWebsite',
+      'cryptoNiche', 'beliefSignal', 'activityLevel', 'tags',
+      'email', 'emailSource', 'emailConfidence', 'emailVerified', 'emailType',
+      'priority', 'status', 'sourceFound', 'notes', 'createdAt',
+    ]
 
     const rows = [
       headers.join(','),
@@ -85,10 +107,6 @@ export async function GET(req: NextRequest) {
       ].join(',')),
     ]
 
-    // Build a descriptive filename — if filtering by ecosystems, include them
-    const ecoSuffix = ecosystems.length
-      ? `-${ecosystems.join('-').toLowerCase()}`
-      : ''
     const filename = `leads${ecoSuffix}-${new Date().toISOString().slice(0, 10)}.csv`
 
     return new NextResponse(rows.join('\n'), {
