@@ -128,6 +128,14 @@ export default function LeadsPageClient() {
     setEcoDropdown(false)
   }
 
+  const handleExportEcosystemEmailsOnly = (eco: string) => {
+    const params = new URLSearchParams()
+    params.append('ecosystem', eco)
+    params.set('emailsOnly', 'true')
+    window.open(`/api/leads/export?${params}`, '_blank')
+    setEcoDropdown(false)
+  }
+
   const handleExportAll = () => {
     window.open('/api/leads/export', '_blank')
     setEcoDropdown(false)
@@ -168,7 +176,7 @@ export default function LeadsPageClient() {
             </button>
 
             {ecoDropdown && (
-              <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
+              <div className="absolute right-0 top-full mt-1 z-50 w-60 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
 
                 {/* Current view / all */}
                 <div className="px-3 py-2 border-b border-border">
@@ -210,10 +218,9 @@ export default function LeadsPageClient() {
                   ) : (
                     <div className="space-y-0.5 max-h-64 overflow-y-auto">
                       {ecosystems.map(({ ecosystem: eco, count }) => (
-                        <button
+                        <div
                           key={eco}
-                          onClick={() => handleExportEcosystem(eco)}
-                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs hover:bg-secondary transition-colors text-left group"
+                          className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs hover:bg-secondary transition-colors group"
                         >
                           <span className={cn(
                             'w-1.5 h-1.5 rounded-full bg-current shrink-0',
@@ -223,8 +230,21 @@ export default function LeadsPageClient() {
                             {eco}
                           </span>
                           <span className="ml-auto text-[10px] text-muted-foreground">{count}</span>
-                          <Download className="w-3 h-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-colors" />
-                        </button>
+                          <button
+                            onClick={() => handleExportEcosystem(eco)}
+                            title="Export full CSV"
+                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded border border-border text-[10px] text-muted-foreground hover:text-foreground transition-all"
+                          >
+                            <Download className="w-2.5 h-2.5" /> CSV
+                          </button>
+                          <button
+                            onClick={() => handleExportEcosystemEmailsOnly(eco)}
+                            title="Export emails only"
+                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded border border-border text-[10px] text-muted-foreground hover:text-foreground transition-all"
+                          >
+                            <Mail className="w-2.5 h-2.5" /> Emails
+                          </button>
+                        </div>
                       ))}
                     </div>
                   )}
